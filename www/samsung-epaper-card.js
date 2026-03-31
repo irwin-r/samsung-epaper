@@ -89,12 +89,18 @@ class SamsungEpaperCard extends HTMLElement {
 
   async _loadFavourites() {
     try {
-      const [fRes, cRes] = await Promise.all([
+      const [fRes, cRes, aRes] = await Promise.all([
         fetch(this._url("/api/favourites")),
         fetch(this._url("/api/collections")),
+        fetch(this._url("/api/assets?limit=200")),
       ]);
       if (fRes.ok) this._favourites = await fRes.json();
       if (cRes.ok) this._collections = await cRes.json();
+      if (aRes.ok) {
+        const assets = await aRes.json();
+        this._assetMap = {};
+        for (const a of assets) this._assetMap[a.id] = a;
+      }
       this._render();
     } catch (e) { console.error("Favourites:", e); }
   }
@@ -118,6 +124,23 @@ class SamsungEpaperCard extends HTMLElement {
       });
       this._toast("Added to favourites");
     }
+    await this._loadFavourites();
+  }
+
+  async _renameFavourite(favId) {
+    const fav = this._favourites.find(f => f.id === favId);
+    const name = prompt("Name this favourite:", fav?.name || "");
+    if (name === null) return;
+    await fetch(this._url(`/api/favourites/${favId}?name=${encodeURIComponent(name)}`), { method: "PUT" });
+    this._toast("Renamed");
+    await this._loadFavourites();
+  }
+
+  async _deleteAsset(assetId) {
+    if (!confirm("Delete this image from history?")) return;
+    await fetch(this._url(`/api/assets/${assetId}`), { method: "DELETE" });
+    this._toast("Deleted");
+    await this._loadHistory();
     await this._loadFavourites();
   }
 
@@ -422,6 +445,19 @@ class SamsungEpaperCard extends HTMLElement {
         .icon-btn.active { color:#f44336; }
         .fav-thumb { width:28px; height:50px; border-radius:4px; overflow:hidden; background:#111; flex-shrink:0; }
         .fav-thumb img { width:100%; height:100%; object-fit:cover; }
+        .item-actions {
+          position:absolute; top:3px; right:3px;
+          display:flex; gap:2px; opacity:0; transition:opacity .15s;
+        }
+        .gallery-item:hover .item-actions { opacity:1; }
+        .overlay-btn {
+          width:20px; height:20px; border-radius:4px; border:none; cursor:pointer;
+          display:flex; align-items:center; justify-content:center;
+          background:rgba(0,0,0,.6); color:#fff; font-size:12px;
+          transition:background .15s;
+        }
+        .overlay-btn:hover { background:rgba(0,0,0,.8); }
+        .overlay-btn.active { color:#f44336; }
         #toast {
           position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(80px);
           background:var(--primary-color,#03a9f4); color:#fff; padding:8px 18px;
@@ -517,11 +553,15 @@ class SamsungEpaperCard extends HTMLElement {
             return `<div class="gallery-item" data-id="${a.id}">
               <img src="${this._url(`/api/assets/${a.id}/thumbnail`)}" loading="lazy" />
               <div class="lbl">${a.title || a.source_type}</div>
-              <button class="icon-btn fav-btn ${isFav ? "active" : ""}" data-fav-asset="${a.id}"
-                style="position:absolute;top:2px;right:2px;width:22px;height:22px;background:rgba(0,0,0,.5);color:${isFav ? "#f44336" : "#fff"}"
-                title="${isFav ? "Remove from favourites" : "Add to favourites"}">
-                ${isFav ? "&#9829;" : "&#9825;"}
-              </button>
+              <div class="item-actions">
+                <button class="overlay-btn fav-btn ${isFav ? "active" : ""}" data-fav-asset="${a.id}"
+                  title="${isFav ? "Unfavourite" : "Favourite"}">
+                  ${isFav ? "&#9829;" : "&#9825;"}
+                </button>
+                <button class="overlay-btn del-btn" data-del-asset="${a.id}" title="Delete">
+                  &times;
+                </button>
+              </div>
             </div>`;
           }).join("")}</div>`;
 
@@ -529,9 +569,17 @@ class SamsungEpaperCard extends HTMLElement {
         if (!this._favourites.length) return `<div class="empty">No favourites yet. Click the heart on any image in History.</div>`;
         return `<div class="gallery">${this._favourites
           .map(f => {
+            const asset = this._assetMap?.[f.asset_id];
+            const label = f.name || asset?.title || asset?.filename_original || "Untitled";
             return `<div class="gallery-item" data-id="${f.asset_id}">
               <img src="${this._url(`/api/assets/${f.asset_id}/thumbnail`)}" loading="lazy" />
-              <div class="lbl">${f.name || "Favourite"}</div>
+              <div class="lbl">${label}</div>
+              <div class="item-actions">
+                <button class="overlay-btn" data-rename-fav="${f.id}" title="Rename">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="overlay-btn fav-btn active" data-fav-asset="${f.asset_id}" title="Unfavourite">&#9829;</button>
+              </div>
             </div>`;
           }).join("")}</div>`;
 
@@ -605,10 +653,10 @@ class SamsungEpaperCard extends HTMLElement {
       this.shadowRoot.getElementById("btn-url")?.addEventListener("click", () => this._displayUrl());
       this.shadowRoot.getElementById("url-input")?.addEventListener("keydown", e => { if (e.key === "Enter") this._displayUrl(); });
     }
-    if (this._activeTab === "history") {
+    if (this._activeTab === "history" || this._activeTab === "favourites") {
       this.shadowRoot.querySelectorAll(".gallery-item").forEach(i =>
         i.addEventListener("click", (e) => {
-          if (e.target.closest(".fav-btn")) return; // don't trigger display on fav click
+          if (e.target.closest(".overlay-btn")) return;
           this._displayAsset(i.dataset.id);
         })
       );
@@ -618,10 +666,17 @@ class SamsungEpaperCard extends HTMLElement {
           this._toggleFavourite(b.dataset.favAsset);
         })
       );
-    }
-    if (this._activeTab === "favourites") {
-      this.shadowRoot.querySelectorAll(".gallery-item").forEach(i =>
-        i.addEventListener("click", () => this._displayAsset(i.dataset.id))
+      this.shadowRoot.querySelectorAll("[data-del-asset]").forEach(b =>
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._deleteAsset(b.dataset.delAsset);
+        })
+      );
+      this.shadowRoot.querySelectorAll("[data-rename-fav]").forEach(b =>
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._renameFavourite(b.dataset.renameFav);
+        })
       );
     }
     if (this._activeTab === "schedules") {

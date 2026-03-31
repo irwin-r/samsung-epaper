@@ -488,6 +488,28 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Asset not found")
         return asset.model_dump(mode="json")
 
+    @app.delete("/api/assets/{asset_id}")
+    async def delete_asset(asset_id: str):
+        asset = await app.state.asset_repo.get(asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        # Remove files
+        for subdir, fname in [
+            ("originals", asset.filename_original),
+            ("processed", asset.filename_processed),
+            ("thumbnails", asset.filename_thumbnail),
+        ]:
+            if fname:
+                p = app.state.assets_dir / subdir / fname
+                if p.exists():
+                    p.unlink()
+        # Remove from DB (history entries will remain but asset gone)
+        await app.state.db.execute("DELETE FROM favourites WHERE asset_id = ?", (asset_id,))
+        await app.state.db.execute("DELETE FROM display_history WHERE asset_id = ?", (asset_id,))
+        await app.state.db.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+        await app.state.db.commit()
+        return {"status": "deleted"}
+
     @app.get("/api/assets/{asset_id}/thumbnail")
     async def get_asset_thumbnail(asset_id: str):
         asset = await app.state.asset_repo.get(asset_id)
@@ -660,6 +682,17 @@ def create_app() -> FastAPI:
                 detail="Asset is already in this collection",
             )
         return {"id": favourite_id, "status": "created"}
+
+    @app.put("/api/favourites/{favourite_id}")
+    async def rename_favourite(favourite_id: str, name: str = Query(...)):
+        favourite = await app.state.favourite_repo.get(favourite_id)
+        if not favourite:
+            raise HTTPException(status_code=404, detail="Favourite not found")
+        await app.state.db.execute(
+            "UPDATE favourites SET name = ? WHERE id = ?", (name, favourite_id)
+        )
+        await app.state.db.commit()
+        return {"status": "updated"}
 
     @app.delete("/api/favourites/{favourite_id}")
     async def remove_favourite(favourite_id: str):
