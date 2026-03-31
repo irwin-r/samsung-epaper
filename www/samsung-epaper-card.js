@@ -441,7 +441,7 @@ class SamsungEpaperCard extends HTMLElement {
           display:flex; align-items:center; justify-content:center;
         }
         .frame-inner img {
-          width:100%; height:100%; object-fit:contain;
+          width:100%; height:100%; object-fit:cover;
           display:block;
         }
         .frame-placeholder {
