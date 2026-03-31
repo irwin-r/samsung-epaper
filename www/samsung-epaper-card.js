@@ -425,38 +425,22 @@ class SamsungEpaperCard extends HTMLElement {
           flex:0 0 auto; display:flex; flex-direction:column; align-items:center;
         }
 
-        /* --- Baroque Frame --- */
-        .baroque-frame {
-          position:relative; display:inline-block;
-          padding:14px;
-          background: linear-gradient(135deg, #8B6914 0%, #D4A843 15%, #F5D98A 30%, #D4A843 45%, #8B6914 55%, #D4A843 70%, #F5D98A 85%, #8B6914 100%);
-          border-radius:4px;
-          box-shadow:
-            0 0 0 2px #6B4F0A,
-            0 0 0 4px #D4A843,
-            0 0 0 6px #6B4F0A,
-            inset 0 0 8px rgba(0,0,0,0.5),
-            4px 6px 20px rgba(0,0,0,0.4),
-            inset 2px 2px 4px rgba(255,235,180,0.3);
+        /* --- Photo Frame Overlay --- */
+        .frame-wrap {
+          position:relative;
+          width:220px;
+          aspect-ratio:449/574;
         }
-        .baroque-frame::before {
-          content:'';
-          position:absolute; top:5px; left:5px; right:5px; bottom:5px;
-          border:2px solid rgba(139,105,20,0.6);
-          border-radius:2px;
-          pointer-events:none;
-        }
-        .baroque-frame::after {
-          content:'';
-          position:absolute; top:9px; left:9px; right:9px; bottom:9px;
-          border:1px solid rgba(212,168,67,0.4);
-          pointer-events:none;
+        .frame-overlay {
+          position:absolute; top:0; left:0; width:100%; height:100%;
+          background:url('/local/frame.png?v=1') center/contain no-repeat;
+          z-index:2; pointer-events:none;
         }
         .frame-inner {
-          position:relative;
-          width:180px; height:320px;
+          position:absolute;
+          top:16%; left:19.6%; right:21.6%; bottom:15.2%;
           overflow:hidden; background:#111;
-          box-shadow: inset 0 0 12px rgba(0,0,0,0.8);
+          z-index:1;
         }
         .frame-inner img {
           width:100%; height:100%; object-fit:cover;
@@ -597,7 +581,8 @@ class SamsungEpaperCard extends HTMLElement {
       <div class="layout">
         <!-- Left: Framed Preview -->
         <div class="left-col">
-          <div class="baroque-frame">
+          <div class="frame-wrap">
+            <div class="frame-overlay"></div>
             <div class="frame-inner">
               <img id="preview-img" src="${this._getPreviewUrl()}" alt="Display"
                 style="${this._getPreviewUrl() ? "" : "display:none"}" />
