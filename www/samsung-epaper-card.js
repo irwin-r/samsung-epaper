@@ -6,7 +6,10 @@ const CARD_VERSION = "3.3.0";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "Never";
-  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  // Server returns UTC datetimes without Z suffix — append it
+  const d = dateStr.endsWith("Z") ? dateStr : dateStr + "Z";
+  const diff = (Date.now() - new Date(d).getTime()) / 1000;
+  if (diff < 0) return "Just now";
   if (diff < 60) return "Just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -189,7 +192,7 @@ class SamsungEpaperCard extends HTMLElement {
           display:flex; align-items:center; justify-content:center;
         }
         .layout {
-          display:flex; gap:24px; align-items:center;
+          display:flex; gap:24px; align-items:stretch;
           width:100%; max-width:900px;
         }
         .left-col {
