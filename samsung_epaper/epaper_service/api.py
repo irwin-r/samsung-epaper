@@ -298,8 +298,9 @@ def create_app() -> FastAPI:
         """Fetch an image from a URL and push to display."""
         import aiohttp
         timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
+        headers = {"User-Agent": "Samsung-ePaper/1.0"}
+        async with aiohttp.ClientSession(timeout=timeout, headers=headers) as session:
+            async with session.get(url, allow_redirects=True) as resp:
                 if resp.status != 200:
                     raise HTTPException(status_code=400, detail=f"Failed to fetch URL: HTTP {resp.status}")
                 image_data = await resp.read()
