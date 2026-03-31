@@ -173,13 +173,18 @@ class SamsungEpaperCard extends HTMLElement {
       <style>
         :host { display:block; font-family:var(--primary-font-family,sans-serif); }
 
-        /* --- Baroque Frame --- */
-        .frame-container {
-          display:flex; justify-content:center; padding:20px 20px 0;
+        /* --- Layout --- */
+        .layout {
+          display:flex; gap:16px; align-items:flex-start;
         }
+        .left-col {
+          flex:0 0 auto; display:flex; flex-direction:column; align-items:center;
+        }
+
+        /* --- Baroque Frame --- */
         .baroque-frame {
           position:relative; display:inline-block;
-          padding:12px;
+          padding:14px;
           background: linear-gradient(135deg, #8B6914 0%, #D4A843 15%, #F5D98A 30%, #D4A843 45%, #8B6914 55%, #D4A843 70%, #F5D98A 85%, #8B6914 100%);
           border-radius:4px;
           box-shadow:
@@ -192,20 +197,20 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .baroque-frame::before {
           content:'';
-          position:absolute; top:4px; left:4px; right:4px; bottom:4px;
+          position:absolute; top:5px; left:5px; right:5px; bottom:5px;
           border:2px solid rgba(139,105,20,0.6);
           border-radius:2px;
           pointer-events:none;
         }
         .baroque-frame::after {
           content:'';
-          position:absolute; top:8px; left:8px; right:8px; bottom:8px;
+          position:absolute; top:9px; left:9px; right:9px; bottom:9px;
           border:1px solid rgba(212,168,67,0.4);
           pointer-events:none;
         }
         .frame-inner {
           position:relative;
-          width:160px; height:284px;
+          width:180px; height:320px;
           overflow:hidden; background:#111;
           box-shadow: inset 0 0 12px rgba(0,0,0,0.8);
         }
@@ -219,11 +224,12 @@ class SamsungEpaperCard extends HTMLElement {
           color:#555; font-size:12px; text-align:center; padding:16px;
         }
         .frame-info {
-          text-align:center; padding:8px 0 4px; font-size:11px;
-          color:var(--secondary-text-color);
+          text-align:center; padding:8px 0 0; font-size:11px;
+          color:var(--secondary-text-color); line-height:1.4;
         }
 
-        /* --- Card --- */
+        /* --- Card (right side) --- */
+        .right-col { flex:1; min-width:0; }
         .card {
           background:var(--ha-card-background,var(--card-background-color,#fff));
           border-radius:var(--ha-card-border-radius,12px);
@@ -293,9 +299,9 @@ class SamsungEpaperCard extends HTMLElement {
         #toast.show { transform:translateX(-50%) translateY(0); }
       </style>
 
-      <!-- Framed Preview -->
-      <div class="frame-container">
-        <div>
+      <div class="layout">
+        <!-- Left: Framed Preview -->
+        <div class="left-col">
           <div class="baroque-frame">
             <div class="frame-inner">
               ${camUrl
@@ -304,29 +310,31 @@ class SamsungEpaperCard extends HTMLElement {
             </div>
           </div>
           <div class="frame-info">
-            ${preset?.state || "No preset"} &middot;
-            ${status?.state === "updating" ? "Updating..." : (status?.attributes?.last_update ? new Date(status.attributes.last_update).toLocaleString() : "Never")}
+            ${preset?.state || "No preset"}<br/>
+            ${status?.state === "updating" ? "Updating..." : (status?.attributes?.last_update ? new Date(status.attributes.last_update).toLocaleString() : "")}
           </div>
         </div>
-      </div>
 
-      <!-- Controls Card -->
-      <div class="card">
-        <div class="card-header">
-          <h3>${this._config.title}</h3>
-          <span style="font-size:11px;color:var(--secondary-text-color)">
-            <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
-            ${reachable?.state === "on" ? "Online" : "Offline"}
-          </span>
-        </div>
-        <div class="tabs">
-          <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
-          <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
-          <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
-        </div>
-        <div class="tab-body">${this._renderTab()}</div>
-        <div class="btn-row">
-          <button class="btn sm" id="btn-refresh">Refresh Display</button>
+        <!-- Right: Controls -->
+        <div class="right-col">
+          <div class="card">
+            <div class="card-header">
+              <h3>${this._config.title}</h3>
+              <span style="font-size:11px;color:var(--secondary-text-color)">
+                <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
+                ${reachable?.state === "on" ? "Online" : "Offline"}
+              </span>
+            </div>
+            <div class="tabs">
+              <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
+              <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
+              <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
+            </div>
+            <div class="tab-body">${this._renderTab()}</div>
+            <div class="btn-row">
+              <button class="btn sm" id="btn-refresh">Refresh Display</button>
+            </div>
+          </div>
         </div>
       </div>
       <div id="toast"></div>
