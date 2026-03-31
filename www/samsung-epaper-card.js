@@ -37,6 +37,7 @@ class SamsungEpaperCard extends HTMLElement {
     this._schedules = [];
     this._currentName = null;
     this._currentAssetId = null;
+    this._lastDisplayedAt = null;
   }
 
   setConfig(config) {
@@ -60,6 +61,7 @@ class SamsungEpaperCard extends HTMLElement {
         const s = await r.json();
         if (s.current_asset_id) {
           this._currentAssetId = s.current_asset_id;
+          this._lastDisplayedAt = s.last_update;
           const ar = await fetch(this._url(`/api/assets/${s.current_asset_id}`));
           if (ar.ok) {
             const a = await ar.json();
@@ -211,10 +213,11 @@ class SamsungEpaperCard extends HTMLElement {
     const metaEl = this.shadowRoot.getElementById("status-meta");
     if (metaEl) {
       const name = this._currentName || this._hass?.states?.["select.samsung_epaper_active_preset"]?.state || "No preset";
+      const t = this._lastDisplayedAt || status?.attributes?.last_update;
       metaEl.innerHTML = `
         <span class="meta-label">${name}</span>
         <span class="meta-sep">&middot;</span>
-        <span class="meta-time">${this._currentAssetId ? "Just now" : timeAgo(status?.attributes?.last_update)}</span>
+        <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(t)}</span>
       `;
     }
   }
@@ -230,6 +233,7 @@ class SamsungEpaperCard extends HTMLElement {
     const asset = this._assets?.find(a => a.id === id) || this._assetMap?.[id];
     this._currentAssetId = id;
     this._currentName = asset?.title || asset?.filename_original || "Image";
+    this._lastDisplayedAt = new Date().toISOString();
     this._updateStatusBar();
     // Update preview immediately from addon thumbnail
     const img = this.shadowRoot.getElementById("preview-img");
@@ -348,12 +352,11 @@ class SamsungEpaperCard extends HTMLElement {
     const metaEl = this.shadowRoot.getElementById("status-meta");
     if (metaEl) {
       const name = this._currentName || preset?.state || "No preset";
-      const time = status?.state === "updating" ? "Updating..." :
-        (this._currentAssetId ? "Just now" : timeAgo(status?.attributes?.last_update));
+      const t = this._lastDisplayedAt || status?.attributes?.last_update;
       metaEl.innerHTML = `
         <span class="meta-label">${name}</span>
         <span class="meta-sep">&middot;</span>
-        <span class="meta-time">${time}</span>
+        <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(t)}</span>
       `;
     }
 
