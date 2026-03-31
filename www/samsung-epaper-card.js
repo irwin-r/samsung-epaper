@@ -241,10 +241,13 @@ class SamsungEpaperCard extends HTMLElement {
           display:flex; align-items:center; justify-content:center;
           color:#555; font-size:12px; text-align:center; padding:16px;
         }
-        .frame-info {
-          text-align:center; padding:8px 0 0; font-size:11px;
-          color:var(--secondary-text-color); line-height:1.4;
+        .status-bar {
+          display:flex; align-items:center; gap:8px;
+          padding:10px 0 2px; font-size:11px;
+          color:var(--secondary-text-color);
         }
+        .status-bar .meta { flex:1; min-width:0; }
+        .status-bar .meta span { opacity:0.7; }
 
         /* --- Card (right side) --- */
         .right-col { flex:1; min-width:0; display:flex; flex-direction:column; }
@@ -340,10 +343,6 @@ class SamsungEpaperCard extends HTMLElement {
                 : `<div class="frame-placeholder">No image displayed</div>`}
             </div>
           </div>
-          <div class="frame-info">
-            ${preset?.state || "No preset"} &middot;
-            ${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}
-          </div>
         </div>
 
         <!-- Right: Controls -->
@@ -353,7 +352,13 @@ class SamsungEpaperCard extends HTMLElement {
               <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
               <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
-              <span style="flex:1"></span>
+            </div>
+            <div class="tab-body">${this._renderTab()}</div>
+            <div class="status-bar">
+              <div class="meta">
+                ${preset?.state || "No preset"} <span>&middot;</span>
+                ${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}
+              </div>
               <button class="btn-status ${reachable?.state === "on" ? "" : "offline"}" id="btn-refresh" title="Refresh display">
                 <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
                 ${status?.state === "updating" ? "Updating..." : (reachable?.state === "on" ? "Online" : "Offline")}
@@ -363,7 +368,6 @@ class SamsungEpaperCard extends HTMLElement {
                 </svg>
               </button>
             </div>
-            <div class="tab-body">${this._renderTab()}</div>
           </div>
         </div>
       </div>
