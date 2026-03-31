@@ -435,18 +435,12 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .frame-inner {
           position:absolute;
-          top:14.5%; bottom:12%;
-          /* center horizontally with display aspect ratio (9:16) */
-          left:50%;
-          transform:translateX(-50%);
-          /* height drives width via aspect-ratio */
-          height:calc(100% - 14.5% - 12%);
-          aspect-ratio: 1440 / 2560;
+          top:14.5%; bottom:12%; left:17.5%; right:21%;
           overflow:hidden; background:#000;
           z-index:1;
         }
         .frame-inner img {
-          width:100%; height:100%; object-fit:fill;
+          width:100%; height:100%;
           display:block;
         }
         .frame-placeholder {
