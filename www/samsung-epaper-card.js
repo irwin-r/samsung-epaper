@@ -199,12 +199,9 @@ class SamsungEpaperCard extends HTMLElement {
   }
 
   _getPreviewUrl() {
-    // Prefer addon thumbnail directly (more reliable than HA camera proxy)
+    // Serve the full processed image (not thumbnail) so aspect ratio matches the real display
     const assetId = this._currentAssetId;
-    if (assetId) return this._url(`/api/assets/${assetId}/thumbnail`);
-    // Fall back to HA camera proxy
-    const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
-    if (camera) return `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}`;
+    if (assetId) return this._url(`/api/assets/${assetId}/image`);
     return "";
   }
 

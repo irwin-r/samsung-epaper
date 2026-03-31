@@ -520,6 +520,16 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Thumbnail file not found")
         return FileResponse(thumb_path, media_type="image/jpeg")
 
+    @app.get("/api/assets/{asset_id}/image")
+    async def get_asset_image(asset_id: str):
+        asset = await app.state.asset_repo.get(asset_id)
+        if not asset or not asset.filename_processed:
+            raise HTTPException(status_code=404, detail="Image not found")
+        img_path = app.state.assets_dir / "processed" / asset.filename_processed
+        if not img_path.exists():
+            raise HTTPException(status_code=404, detail="Image file not found")
+        return FileResponse(img_path, media_type="image/png")
+
     # --- Presets ---
 
     @app.get("/api/presets")
