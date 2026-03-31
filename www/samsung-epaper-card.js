@@ -35,6 +35,8 @@ class SamsungEpaperCard extends HTMLElement {
     this._favourites = [];
     this._collections = [];
     this._schedules = [];
+    this._currentName = null;
+    this._currentAssetId = null;
   }
 
   setConfig(config) {
@@ -48,6 +50,25 @@ class SamsungEpaperCard extends HTMLElement {
     };
     this._render();
     this._loadHistory();
+    this._loadCurrentAsset();
+  }
+
+  async _loadCurrentAsset() {
+    try {
+      const r = await fetch(this._url("/api/status"));
+      if (r.ok) {
+        const s = await r.json();
+        if (s.current_asset_id) {
+          this._currentAssetId = s.current_asset_id;
+          const ar = await fetch(this._url(`/api/assets/${s.current_asset_id}`));
+          if (ar.ok) {
+            const a = await ar.json();
+            this._currentName = a.title || a.filename_original;
+          }
+          this._updateDynamic();
+        }
+      }
+    } catch (e) { console.error("Load current:", e); }
   }
 
   set hass(hass) {
@@ -175,28 +196,45 @@ class SamsungEpaperCard extends HTMLElement {
     if (t) { t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 3000); }
   }
 
-  async _refresh() { this._toast("Refreshing..."); await this._svc("refresh"); }
-  async _displayAsset(id) {
-    this._toast("Sending...");
-    // Find the asset name for immediate UI feedback
-    const asset = this._assets?.find(a => a.id === id) || this._assetMap?.[id];
+  _getPreviewUrl() {
+    // Prefer addon thumbnail directly (more reliable than HA camera proxy)
+    const assetId = this._currentAssetId;
+    if (assetId) return this._url(`/api/assets/${assetId}/thumbnail`);
+    // Fall back to HA camera proxy
+    const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
+    if (camera) return `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}`;
+    return "";
+  }
+
+  _updateStatusBar() {
+    const status = this._hass?.states?.["sensor.samsung_epaper_status"];
     const metaEl = this.shadowRoot.getElementById("status-meta");
-    if (metaEl && asset) {
+    if (metaEl) {
+      const name = this._currentName || this._hass?.states?.["select.samsung_epaper_active_preset"]?.state || "No preset";
       metaEl.innerHTML = `
-        <span class="meta-label">${asset.title || asset.filename_original || "Sending..."}</span>
+        <span class="meta-label">${name}</span>
         <span class="meta-sep">&middot;</span>
-        <span class="meta-time">Just now</span>
+        <span class="meta-time">${this._currentAssetId ? "Just now" : timeAgo(status?.attributes?.last_update)}</span>
       `;
     }
+  }
+
+  async _refresh() {
+    this._toast("Refreshing...");
+    this._currentName = null;
+    this._currentAssetId = null;
+    await this._svc("refresh");
+  }
+  async _displayAsset(id) {
+    this._toast("Sending...");
+    const asset = this._assets?.find(a => a.id === id) || this._assetMap?.[id];
+    this._currentAssetId = id;
+    this._currentName = asset?.title || asset?.filename_original || "Image";
+    this._updateStatusBar();
+    // Update preview immediately from addon thumbnail
+    const img = this.shadowRoot.getElementById("preview-img");
+    if (img) img.src = this._url(`/api/assets/${id}/thumbnail`) + `?t=${Date.now()}`;
     await this._svc("display_asset", { asset_id: id });
-    // Refresh preview image after a delay
-    setTimeout(() => {
-      const img = this.shadowRoot.getElementById("preview-img");
-      if (img) {
-        const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
-        if (camera) img.src = `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}&t=${Date.now()}`;
-      }
-    }, 5000);
   }
   async _displayUrl() {
     const v = this.shadowRoot.getElementById("url-input")?.value?.trim();
@@ -306,13 +344,16 @@ class SamsungEpaperCard extends HTMLElement {
     const preset = this._hass?.states?.["select.samsung_epaper_active_preset"];
     const reachable = this._hass?.states?.["binary_sensor.samsung_epaper_reachable"];
 
-    // Update status bar text
+    // Update status bar — prefer locally tracked name over HA entity
     const metaEl = this.shadowRoot.getElementById("status-meta");
     if (metaEl) {
+      const name = this._currentName || preset?.state || "No preset";
+      const time = status?.state === "updating" ? "Updating..." :
+        (this._currentAssetId ? "Just now" : timeAgo(status?.attributes?.last_update));
       metaEl.innerHTML = `
-        <span class="meta-label">${preset?.state || "No preset"}</span>
+        <span class="meta-label">${name}</span>
         <span class="meta-sep">&middot;</span>
-        <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}</span>
+        <span class="meta-time">${time}</span>
       `;
     }
 
@@ -343,14 +384,14 @@ class SamsungEpaperCard extends HTMLElement {
       this._bindTabContent();
     }
 
-    // Update preview image (only if camera token changed)
-    const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
-    const camUrl = camera
-      ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}`
-      : "";
+    // Update preview image
     const previewImg = this.shadowRoot.getElementById("preview-img");
-    if (previewImg && camUrl && previewImg.getAttribute("src") !== camUrl) {
-      previewImg.setAttribute("src", camUrl);
+    const placeholder = this.shadowRoot.getElementById("preview-placeholder");
+    const previewUrl = this._getPreviewUrl();
+    if (previewImg && previewUrl) {
+      if (previewImg.getAttribute("src") !== previewUrl) previewImg.src = previewUrl;
+      previewImg.style.display = "";
+      if (placeholder) placeholder.style.display = "none";
     }
   }
 
@@ -555,9 +596,9 @@ class SamsungEpaperCard extends HTMLElement {
         <div class="left-col">
           <div class="baroque-frame">
             <div class="frame-inner">
-              ${camUrl
-                ? `<img id="preview-img" src="${camUrl}" alt="Display" />`
-                : `<div class="frame-placeholder">No image displayed</div>`}
+              <img id="preview-img" src="${this._getPreviewUrl()}" alt="Display"
+                style="${this._getPreviewUrl() ? "" : "display:none"}" />
+              ${this._getPreviewUrl() ? "" : `<div class="frame-placeholder" id="preview-placeholder">No image displayed</div>`}
             </div>
           </div>
         </div>
