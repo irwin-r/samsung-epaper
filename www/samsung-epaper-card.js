@@ -244,8 +244,9 @@ class SamsungEpaperCard extends HTMLElement {
         }
 
         /* --- Card (right side) --- */
-        .right-col { flex:1; min-width:0; }
+        .right-col { flex:1; min-width:0; display:flex; flex-direction:column; }
         .card {
+          flex:1; display:flex; flex-direction:column;
           background:var(--ha-card-background,var(--card-background-color,#fff));
           border-radius:var(--ha-card-border-radius,12px);
           box-shadow:var(--ha-card-box-shadow,0 2px 6px rgba(0,0,0,.15));
@@ -253,6 +254,14 @@ class SamsungEpaperCard extends HTMLElement {
           margin-top:12px;
         }
         .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px; }
+        .btn-status {
+          display:flex; align-items:center; gap:2px;
+          padding:4px 10px; border-radius:6px; border:none; cursor:pointer;
+          font-size:11px; font-family:inherit;
+          background:transparent; color:var(--secondary-text-color);
+          transition:background .15s;
+        }
+        .btn-status:hover { background:var(--secondary-background-color,#f0f0f0); }
         .dot.on { background:#4caf50; } .dot.off { background:#f44336; }
         .tabs { display:flex; gap:4px; margin-bottom:12px; }
         .tab {
@@ -261,7 +270,7 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .tab.active { background:var(--primary-color,#03a9f4); color:#fff; }
         .tab:hover:not(.active) { background:var(--secondary-background-color,#f5f5f5); }
-        .tab-body { min-height:120px; }
+        .tab-body { flex:1; min-height:120px; display:flex; flex-direction:column; }
         .btn {
           padding:7px 14px; border-radius:6px; border:none; cursor:pointer;
           font-size:12px; font-family:inherit; background:var(--primary-color,#03a9f4); color:#fff;
@@ -279,6 +288,7 @@ class SamsungEpaperCard extends HTMLElement {
         .upload-area {
           border:2px dashed var(--divider-color,#ccc); border-radius:8px;
           padding:28px; text-align:center; cursor:pointer;
+          flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
         }
         .upload-area:hover { border-color:var(--primary-color,#03a9f4); }
         .upload-area input[type=file] { display:none; }
@@ -288,7 +298,7 @@ class SamsungEpaperCard extends HTMLElement {
         .crop-bar { display:flex; justify-content:center; gap:6px; margin-top:6px; align-items:center; font-size:11px; }
         .gallery {
           display:grid; grid-template-columns:repeat(auto-fill,minmax(65px,1fr));
-          gap:6px;
+          gap:6px; align-content:start; flex:1;
         }
         .gallery-item {
           aspect-ratio:9/16; border-radius:5px; overflow:hidden; cursor:pointer;
@@ -301,7 +311,7 @@ class SamsungEpaperCard extends HTMLElement {
           color:#fff; font-size:8px; padding:2px 3px; white-space:nowrap;
           overflow:hidden; text-overflow:ellipsis;
         }
-        .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; }
+        .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; flex:1; display:flex; align-items:center; justify-content:center; }
         #toast {
           position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(80px);
           background:var(--primary-color,#03a9f4); color:#fff; padding:8px 18px;
@@ -335,15 +345,16 @@ class SamsungEpaperCard extends HTMLElement {
               <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
               <span style="flex:1"></span>
-              <span style="font-size:11px;color:var(--secondary-text-color);display:flex;align-items:center">
+              <button class="btn-status" id="btn-refresh" title="Refresh display">
                 <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
-                ${reachable?.state === "on" ? "Online" : "Offline"}
-              </span>
+                ${status?.state === "updating" ? "Updating..." : (reachable?.state === "on" ? "Online" : "Offline")}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px">
+                  <path d="M23 4v6h-6M1 20v-6h6"/>
+                  <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+              </button>
             </div>
             <div class="tab-body">${this._renderTab()}</div>
-            <div class="btn-row">
-              <button class="btn sm" id="btn-refresh">Refresh Display</button>
-            </div>
           </div>
         </div>
       </div>
