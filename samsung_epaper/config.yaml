@@ -1,5 +1,5 @@
 name: "Samsung ePaper Display"
-version: "1.0.0"
+version: "1.0.1"
 slug: "samsung_epaper"
 description: "Push content to Samsung ePaper displays via MDC protocol"
 arch:
