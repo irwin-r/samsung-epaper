@@ -1,0 +1,17 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Samsung ePaper Display",
+        "description": "Configure connection to the Samsung ePaper addon.",
+        "data": {
+          "addon_url": "Addon URL",
+          "display_name": "Display Name"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to the Samsung ePaper addon at the specified URL."
+    }
+  }
+}

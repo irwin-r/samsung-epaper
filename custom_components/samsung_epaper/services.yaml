@@ -1,0 +1,25 @@
+display_preset:
+  name: Display Preset
+  description: Activate a preset and update the display
+  fields:
+    preset_name:
+      name: Preset Name
+      description: Name of the preset to activate
+      required: true
+      selector:
+        text:
+
+display_asset:
+  name: Display Asset
+  description: Display a specific asset on the ePaper display
+  fields:
+    asset_id:
+      name: Asset ID
+      description: ID of the asset to display
+      required: true
+      selector:
+        text:
+
+refresh:
+  name: Refresh Display
+  description: Fetch new content from the active source and update display

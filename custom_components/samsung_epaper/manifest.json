@@ -1,0 +1,11 @@
+{
+  "domain": "samsung_epaper",
+  "name": "Samsung ePaper Display",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "",
+  "iot_class": "local_polling",
+  "requirements": ["aiohttp>=3.9.0"],
+  "version": "1.0.0"
+}

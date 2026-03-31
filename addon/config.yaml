@@ -1,0 +1,39 @@
+name: "Samsung ePaper Display"
+version: "1.0.0"
+slug: "samsung_epaper"
+description: "Push content to Samsung ePaper displays via MDC protocol"
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+startup: application
+boot: auto
+host_network: true
+ports:
+  8000/tcp: 8000
+ports_description:
+  8000/tcp: "API and content delivery"
+map:
+  - addon_config:rw
+options:
+  display_ip: ""
+  display_port: 1515
+  display_id: 0
+  display_pin: ""
+  public_base_url: ""
+  viewport_width: 1440
+  viewport_height: 2560
+  newspaper_url: "https://www.frontpages.com/the-sydney-morning-herald/"
+  newspaper_pattern: "the-sydney-morning-herald"
+schema:
+  display_ip: str
+  display_port: port
+  display_id: int
+  display_pin: "str?"
+  public_base_url: url
+  viewport_width: int
+  viewport_height: int
+  newspaper_url: url
+  newspaper_pattern: str
