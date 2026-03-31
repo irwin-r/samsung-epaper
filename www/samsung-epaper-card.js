@@ -255,13 +255,19 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px; }
         .btn-status {
-          display:flex; align-items:center; gap:2px;
-          padding:4px 10px; border-radius:6px; border:none; cursor:pointer;
-          font-size:11px; font-family:inherit;
-          background:transparent; color:var(--secondary-text-color);
-          transition:background .15s;
+          display:flex; align-items:center; gap:5px;
+          padding:5px 12px 5px 10px; border-radius:20px; border:none; cursor:pointer;
+          font-size:11px; font-family:inherit; font-weight:500; letter-spacing:0.3px;
+          background:rgba(76,175,80,0.08); color:#4caf50;
+          transition:all .2s;
         }
-        .btn-status:hover { background:var(--secondary-background-color,#f0f0f0); }
+        .btn-status.offline { background:rgba(244,67,54,0.08); color:#f44336; }
+        .btn-status:hover { background:rgba(76,175,80,0.18); }
+        .btn-status.offline:hover { background:rgba(244,67,54,0.18); }
+        .btn-status svg {
+          opacity:0.6; transition:opacity .2s, transform .3s;
+        }
+        .btn-status:hover svg { opacity:1; transform:rotate(45deg); }
         .dot.on { background:#4caf50; } .dot.off { background:#f44336; }
         .tabs { display:flex; gap:4px; margin-bottom:12px; }
         .tab {
@@ -345,10 +351,10 @@ class SamsungEpaperCard extends HTMLElement {
               <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
               <span style="flex:1"></span>
-              <button class="btn-status" id="btn-refresh" title="Refresh display">
+              <button class="btn-status ${reachable?.state === "on" ? "" : "offline"}" id="btn-refresh" title="Refresh display">
                 <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
                 ${status?.state === "updating" ? "Updating..." : (reachable?.state === "on" ? "Online" : "Offline")}
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-left:4px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                   <path d="M23 4v6h-6M1 20v-6h6"/>
                   <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
                 </svg>
