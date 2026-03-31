@@ -32,6 +32,9 @@ class SamsungEpaperCard extends HTMLElement {
     this._dragStartX = 0;
     this._dragStartY = 0;
     this._cropFile = null;
+    this._favourites = [];
+    this._collections = [];
+    this._schedules = [];
   }
 
   setConfig(config) {
@@ -82,6 +85,60 @@ class SamsungEpaperCard extends HTMLElement {
         this._render();
       }
     } catch (e) { console.error("History:", e); }
+  }
+
+  async _loadFavourites() {
+    try {
+      const [fRes, cRes] = await Promise.all([
+        fetch(this._url("/api/favourites")),
+        fetch(this._url("/api/collections")),
+      ]);
+      if (fRes.ok) this._favourites = await fRes.json();
+      if (cRes.ok) this._collections = await cRes.json();
+      this._render();
+    } catch (e) { console.error("Favourites:", e); }
+  }
+
+  async _loadSchedules() {
+    try {
+      const r = await fetch(this._url("/api/schedules"));
+      if (r.ok) { this._schedules = await r.json(); this._render(); }
+    } catch (e) { console.error("Schedules:", e); }
+  }
+
+  async _toggleFavourite(assetId) {
+    const existing = this._favourites.find(f => f.asset_id === assetId);
+    if (existing) {
+      await fetch(this._url(`/api/favourites/${existing.id}`), { method: "DELETE" });
+      this._toast("Removed from favourites");
+    } else {
+      await fetch(this._url("/api/favourites"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_id: assetId }),
+      });
+      this._toast("Added to favourites");
+    }
+    await this._loadFavourites();
+  }
+
+  async _deleteSchedule(id) {
+    await fetch(this._url(`/api/schedules/${id}`), { method: "DELETE" });
+    this._toast("Schedule deleted");
+    await this._loadSchedules();
+  }
+
+  async _toggleSchedule(id, enabled) {
+    await fetch(this._url(`/api/schedules/${id}`), {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_enabled: !enabled }),
+    });
+    await this._loadSchedules();
+  }
+
+  async _runSchedule(id) {
+    this._toast("Running schedule...");
+    await fetch(this._url(`/api/schedules/${id}/run`), { method: "POST" });
+    setTimeout(() => this._loadHistory(), 3000);
   }
 
   async _svc(s, d = {}) {
@@ -346,6 +403,25 @@ class SamsungEpaperCard extends HTMLElement {
           overflow:hidden; text-overflow:ellipsis;
         }
         .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; flex:1; display:flex; align-items:center; justify-content:center; }
+        .schedule-item, .fav-item {
+          display:flex; align-items:center; gap:8px; padding:8px 10px;
+          border-radius:6px; font-size:12px;
+          background:var(--secondary-background-color,#f5f5f5);
+          margin-bottom:6px;
+        }
+        .schedule-item .name, .fav-item .name { flex:1; font-weight:500; }
+        .schedule-item .cron { opacity:0.5; font-size:11px; font-family:monospace; }
+        .schedule-item .actions, .fav-item .actions { display:flex; gap:4px; }
+        .icon-btn {
+          width:28px; height:28px; border-radius:6px; border:none; cursor:pointer;
+          display:flex; align-items:center; justify-content:center;
+          background:transparent; color:var(--secondary-text-color);
+          transition:background .15s;
+        }
+        .icon-btn:hover { background:var(--divider-color,#e0e0e0); }
+        .icon-btn.active { color:#f44336; }
+        .fav-thumb { width:28px; height:50px; border-radius:4px; overflow:hidden; background:#111; flex-shrink:0; }
+        .fav-thumb img { width:100%; height:100%; object-fit:cover; }
         #toast {
           position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(80px);
           background:var(--primary-color,#03a9f4); color:#fff; padding:8px 18px;
@@ -388,6 +464,8 @@ class SamsungEpaperCard extends HTMLElement {
             <div class="tabs">
               <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
+              <button class="tab ${this._activeTab === "favourites" ? "active" : ""}" data-tab="favourites">Favourites</button>
+              <button class="tab ${this._activeTab === "schedules" ? "active" : ""}" data-tab="schedules">Schedules</button>
             </div>
             <div class="tab-body">${this._renderTab()}</div>
           </div>
@@ -434,10 +512,51 @@ class SamsungEpaperCard extends HTMLElement {
         if (!this._assets.length) return `<div class="empty">No history yet</div>`;
         return `<div class="gallery">${this._assets
           .filter(a => a.filename_thumbnail)
-          .map(a => `<div class="gallery-item" data-id="${a.id}">
-            <img src="${this._url(`/api/assets/${a.id}/thumbnail`)}" loading="lazy" />
-            <div class="lbl">${a.title || a.source_type}</div>
-          </div>`).join("")}</div>`;
+          .map(a => {
+            const isFav = this._favourites.some(f => f.asset_id === a.id);
+            return `<div class="gallery-item" data-id="${a.id}">
+              <img src="${this._url(`/api/assets/${a.id}/thumbnail`)}" loading="lazy" />
+              <div class="lbl">${a.title || a.source_type}</div>
+              <button class="icon-btn fav-btn ${isFav ? "active" : ""}" data-fav-asset="${a.id}"
+                style="position:absolute;top:2px;right:2px;width:22px;height:22px;background:rgba(0,0,0,.5);color:${isFav ? "#f44336" : "#fff"}"
+                title="${isFav ? "Remove from favourites" : "Add to favourites"}">
+                ${isFav ? "&#9829;" : "&#9825;"}
+              </button>
+            </div>`;
+          }).join("")}</div>`;
+
+      case "favourites":
+        if (!this._favourites.length) return `<div class="empty">No favourites yet. Click the heart on any image in History.</div>`;
+        return `<div class="gallery">${this._favourites
+          .map(f => {
+            return `<div class="gallery-item" data-id="${f.asset_id}">
+              <img src="${this._url(`/api/assets/${f.asset_id}/thumbnail`)}" loading="lazy" />
+              <div class="lbl">${f.name || "Favourite"}</div>
+            </div>`;
+          }).join("")}</div>`;
+
+      case "schedules":
+        const items = this._schedules.map(s => `
+          <div class="schedule-item">
+            <div style="width:8px;height:8px;border-radius:50;background:${s.is_enabled ? "#4caf50" : "#999"}"></div>
+            <div class="name">${s.name}</div>
+            <div class="cron">${s.cron_expression}</div>
+            <div class="actions">
+              <button class="icon-btn" data-run-schedule="${s.id}" title="Run now">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+              </button>
+              <button class="icon-btn" data-toggle-schedule="${s.id}" data-enabled="${s.is_enabled}" title="${s.is_enabled ? "Disable" : "Enable"}">
+                ${s.is_enabled
+                  ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>'
+                  : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16" fill="currentColor"/></svg>'}
+              </button>
+              <button class="icon-btn" data-del-schedule="${s.id}" title="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>`).join("");
+        return items || `<div class="empty">No schedules. Use HA services to create one.</div>`;
+
       default: return "";
     }
   }
@@ -447,6 +566,8 @@ class SamsungEpaperCard extends HTMLElement {
       t.addEventListener("click", () => {
         this._activeTab = t.dataset.tab; this._render();
         if (t.dataset.tab === "history") this._loadHistory();
+        if (t.dataset.tab === "favourites") this._loadFavourites();
+        if (t.dataset.tab === "schedules") this._loadSchedules();
         if (t.dataset.tab === "upload" && this._cropImage)
           requestAnimationFrame(() => this._drawCrop());
       })
@@ -486,7 +607,32 @@ class SamsungEpaperCard extends HTMLElement {
     }
     if (this._activeTab === "history") {
       this.shadowRoot.querySelectorAll(".gallery-item").forEach(i =>
+        i.addEventListener("click", (e) => {
+          if (e.target.closest(".fav-btn")) return; // don't trigger display on fav click
+          this._displayAsset(i.dataset.id);
+        })
+      );
+      this.shadowRoot.querySelectorAll(".fav-btn").forEach(b =>
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._toggleFavourite(b.dataset.favAsset);
+        })
+      );
+    }
+    if (this._activeTab === "favourites") {
+      this.shadowRoot.querySelectorAll(".gallery-item").forEach(i =>
         i.addEventListener("click", () => this._displayAsset(i.dataset.id))
+      );
+    }
+    if (this._activeTab === "schedules") {
+      this.shadowRoot.querySelectorAll("[data-run-schedule]").forEach(b =>
+        b.addEventListener("click", () => this._runSchedule(b.dataset.runSchedule))
+      );
+      this.shadowRoot.querySelectorAll("[data-toggle-schedule]").forEach(b =>
+        b.addEventListener("click", () => this._toggleSchedule(b.dataset.toggleSchedule, b.dataset.enabled === "true"))
+      );
+      this.shadowRoot.querySelectorAll("[data-del-schedule]").forEach(b =>
+        b.addEventListener("click", () => this._deleteSchedule(b.dataset.delSchedule))
       );
     }
   }
