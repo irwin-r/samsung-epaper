@@ -71,6 +71,14 @@ class SamsungEpaperApiClient:
             resp.raise_for_status()
             return await resp.read()
 
+    async def async_display_url(self, url: str, title: str = "URL Image") -> dict:
+        async with self.session.post(
+            f"{self.base_url}/api/display_url",
+            params={"url": url, "title": title},
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def async_health_check(self) -> bool:
         try:
             async with self.session.get(

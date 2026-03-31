@@ -20,6 +20,24 @@ display_asset:
       selector:
         text:
 
+display_url:
+  name: Display URL
+  description: Fetch an image from a URL and push to the display
+  fields:
+    url:
+      name: Image URL
+      description: URL of the image to display
+      required: true
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional title for the image
+      required: false
+      default: "URL Image"
+      selector:
+        text:
+
 refresh:
   name: Refresh Display
   description: Fetch new content from the active source and update display

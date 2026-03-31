@@ -14,6 +14,7 @@ from .const import (
     PLATFORMS,
     SERVICE_DISPLAY_ASSET,
     SERVICE_DISPLAY_PRESET,
+    SERVICE_DISPLAY_URL,
     SERVICE_REFRESH,
 )
 from .coordinator import SamsungEpaperApiClient, SamsungEpaperCoordinator
@@ -25,6 +26,12 @@ SERVICE_DISPLAY_PRESET_SCHEMA = vol.Schema(
 )
 SERVICE_DISPLAY_ASSET_SCHEMA = vol.Schema(
     {vol.Required("asset_id"): str}
+)
+SERVICE_DISPLAY_URL_SCHEMA = vol.Schema(
+    {
+        vol.Required("url"): str,
+        vol.Optional("title", default="URL Image"): str,
+    }
 )
 
 
@@ -50,9 +57,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
-        # Unregister services when last entry is removed
         if not hass.data[DOMAIN]:
-            for service in (SERVICE_DISPLAY_PRESET, SERVICE_DISPLAY_ASSET, SERVICE_REFRESH):
+            for service in (SERVICE_DISPLAY_PRESET, SERVICE_DISPLAY_ASSET, SERVICE_DISPLAY_URL, SERVICE_REFRESH):
                 hass.services.async_remove(DOMAIN, service)
     return unload_ok
 
@@ -80,6 +86,15 @@ def _async_setup_services(hass: HomeAssistant) -> None:
             await client.async_display_asset(asset_id)
             await coordinator.async_request_refresh()
 
+    async def handle_display_url(call: ServiceCall) -> None:
+        url = call.data["url"]
+        title = call.data.get("title", "URL Image")
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            client = entry_data["client"]
+            coordinator = entry_data["coordinator"]
+            await client.async_display_url(url, title)
+            await coordinator.async_request_refresh()
+
     async def handle_refresh(call: ServiceCall) -> None:
         for entry_data in hass.data.get(DOMAIN, {}).values():
             client = entry_data["client"]
@@ -94,5 +109,9 @@ def _async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_DISPLAY_ASSET, handle_display_asset,
         schema=SERVICE_DISPLAY_ASSET_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DISPLAY_URL, handle_display_url,
+        schema=SERVICE_DISPLAY_URL_SCHEMA,
     )
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)

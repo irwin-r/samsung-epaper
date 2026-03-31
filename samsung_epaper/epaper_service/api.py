@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 
 from . import __version__
@@ -203,6 +203,144 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="Asset not found")
         await push_asset_to_display(app, asset.id)
         return {"status": "sent", "asset_id": asset.id}
+
+    # --- Upload ---
+
+    @app.post("/api/upload")
+    async def upload_image(
+        file: UploadFile = File(...),
+        title: str = Query(default="Uploaded Image"),
+        crop_x: int = Query(default=0, ge=0),
+        crop_y: int = Query(default=0, ge=0),
+        crop_width: int = Query(default=0, ge=0),
+        crop_height: int = Query(default=0, ge=0),
+        process: bool = Query(default=True),
+    ):
+        """Upload an image file and optionally push to display.
+
+        Crop params (crop_x, crop_y, crop_width, crop_height) define a region
+        to extract before resizing. If all are 0, the full image is used.
+        Set process=false to skip resize/crop (push raw image as-is).
+        """
+        assets_dir = app.state.assets_dir
+        processor = app.state.processor
+
+        # Save uploaded file
+        asset_id = str(uuid.uuid4())
+        ext = Path(file.filename).suffix or ".png"
+        original_name = f"{asset_id}_upload{ext}"
+        original_path = assets_dir / "originals" / original_name
+
+        content = await file.read()
+        await asyncio.to_thread(original_path.write_bytes, content)
+
+        # Create asset record
+        db_asset_id = await app.state.asset_repo.create(
+            source_type="upload",
+            filename_original=original_name,
+            title=title,
+        )
+
+        # Crop if requested
+        input_path = original_path
+        if crop_width > 0 and crop_height > 0:
+            from PIL import Image
+            img = await asyncio.to_thread(Image.open, original_path)
+            cropped = img.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
+            cropped_path = assets_dir / "cache" / f"{asset_id}_cropped.png"
+            await asyncio.to_thread(cropped.save, cropped_path, format="PNG")
+            input_path = cropped_path
+
+        # Process for display
+        processed_name = f"{asset_id}_processed.png"
+        processed_path = assets_dir / "processed" / processed_name
+
+        if process:
+            info = await processor.process(input_path, processed_path)
+        else:
+            shutil.copy2(str(input_path), str(processed_path))
+            from PIL import Image
+            img = await asyncio.to_thread(Image.open, processed_path)
+            from .models import ImageInfo
+            info = ImageInfo(width=img.width, height=img.height, file_size=processed_path.stat().st_size)
+
+        # Thumbnail
+        thumb_name = f"{asset_id}_thumb.jpg"
+        thumb_path = assets_dir / "thumbnails" / thumb_name
+        await processor.generate_thumbnail(processed_path, thumb_path)
+
+        # Update asset
+        await app.state.asset_repo.update_processed(
+            asset_id=db_asset_id,
+            filename_processed=processed_name,
+            filename_thumbnail=thumb_name,
+            width=info.width,
+            height=info.height,
+            file_size=info.file_size,
+        )
+
+        # Push to display
+        success = await push_asset_to_display(app, db_asset_id)
+        if success:
+            app.state.current_asset_id = db_asset_id
+            app.state.last_update_status = "success"
+        app.state.last_update = datetime.now()
+
+        return {
+            "status": "sent" if success else "failed",
+            "asset_id": db_asset_id,
+            "width": info.width,
+            "height": info.height,
+        }
+
+    @app.post("/api/display_url")
+    async def display_from_url(url: str = Query(...), title: str = Query(default="URL Image")):
+        """Fetch an image from a URL and push to display."""
+        import aiohttp
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail=f"Failed to fetch URL: HTTP {resp.status}")
+                image_data = await resp.read()
+
+        assets_dir = app.state.assets_dir
+        asset_id = str(uuid.uuid4())
+        original_name = f"{asset_id}_url.png"
+        original_path = assets_dir / "originals" / original_name
+        await asyncio.to_thread(original_path.write_bytes, image_data)
+
+        db_asset_id = await app.state.asset_repo.create(
+            source_type="url",
+            filename_original=original_name,
+            source_id=url,
+            title=title,
+        )
+
+        processed_name = f"{asset_id}_processed.png"
+        processed_path = assets_dir / "processed" / processed_name
+        info = await app.state.processor.process(original_path, processed_path)
+
+        thumb_name = f"{asset_id}_thumb.jpg"
+        thumb_path = assets_dir / "thumbnails" / thumb_name
+        await app.state.processor.generate_thumbnail(processed_path, thumb_path)
+
+        await app.state.asset_repo.update_processed(
+            asset_id=db_asset_id,
+            filename_processed=processed_name,
+            filename_thumbnail=thumb_name,
+            width=info.width,
+            height=info.height,
+            file_size=info.file_size,
+        )
+
+        success = await push_asset_to_display(app, db_asset_id)
+        if success:
+            app.state.current_asset_id = db_asset_id
+            app.state.last_update_status = "success"
+        app.state.last_update = datetime.now()
+
+        return {"status": "sent" if success else "failed", "asset_id": db_asset_id}
 
     # --- Assets ---
 

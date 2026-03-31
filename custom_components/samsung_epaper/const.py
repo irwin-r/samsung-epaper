@@ -9,6 +9,7 @@ DEFAULT_SCAN_INTERVAL = 30
 
 SERVICE_DISPLAY_PRESET = "display_preset"
 SERVICE_DISPLAY_ASSET = "display_asset"
+SERVICE_DISPLAY_URL = "display_url"
 SERVICE_REFRESH = "refresh"
 
 PLATFORMS = ["sensor", "binary_sensor", "select", "camera", "button"]
