@@ -439,11 +439,12 @@ class SamsungEpaperCard extends HTMLElement {
         .frame-inner {
           position:absolute;
           top:18.5%; left:21.7%; right:25.2%; bottom:15.8%;
-          overflow:hidden; background:#111;
+          overflow:hidden; background:#fff;
           z-index:1;
+          display:flex; align-items:center; justify-content:center;
         }
         .frame-inner img {
-          width:100%; height:100%; object-fit:cover;
+          width:100%; height:100%; object-fit:contain;
           display:block;
         }
         .frame-placeholder {
