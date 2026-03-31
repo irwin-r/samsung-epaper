@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
 from . import __version__
@@ -108,6 +109,12 @@ def create_app() -> FastAPI:
         title="Samsung ePaper Display Service",
         version=__version__,
         lifespan=lifespan,
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.include_router(content_router)
 
