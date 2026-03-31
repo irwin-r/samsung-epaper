@@ -174,8 +174,14 @@ class SamsungEpaperCard extends HTMLElement {
         :host { display:block; font-family:var(--primary-font-family,sans-serif); }
 
         /* --- Layout --- */
+        .outer {
+          padding:24px;
+          min-height:calc(100vh - 112px);
+          display:flex; align-items:center; justify-content:center;
+        }
         .layout {
-          display:flex; gap:16px; align-items:flex-start;
+          display:flex; gap:24px; align-items:center;
+          width:100%; max-width:900px;
         }
         .left-col {
           flex:0 0 auto; display:flex; flex-direction:column; align-items:center;
@@ -299,6 +305,7 @@ class SamsungEpaperCard extends HTMLElement {
         #toast.show { transform:translateX(-50%) translateY(0); }
       </style>
 
+      <div class="outer">
       <div class="layout">
         <!-- Left: Framed Preview -->
         <div class="left-col">
@@ -336,6 +343,7 @@ class SamsungEpaperCard extends HTMLElement {
             </div>
           </div>
         </div>
+      </div>
       </div>
       <div id="toast"></div>
     `;
