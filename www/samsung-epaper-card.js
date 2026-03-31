@@ -176,7 +176,28 @@ class SamsungEpaperCard extends HTMLElement {
   }
 
   async _refresh() { this._toast("Refreshing..."); await this._svc("refresh"); }
-  async _displayAsset(id) { this._toast("Sending..."); await this._svc("display_asset", { asset_id: id }); }
+  async _displayAsset(id) {
+    this._toast("Sending...");
+    // Find the asset name for immediate UI feedback
+    const asset = this._assets?.find(a => a.id === id) || this._assetMap?.[id];
+    const metaEl = this.shadowRoot.getElementById("status-meta");
+    if (metaEl && asset) {
+      metaEl.innerHTML = `
+        <span class="meta-label">${asset.title || asset.filename_original || "Sending..."}</span>
+        <span class="meta-sep">&middot;</span>
+        <span class="meta-time">Just now</span>
+      `;
+    }
+    await this._svc("display_asset", { asset_id: id });
+    // Refresh preview image after a delay
+    setTimeout(() => {
+      const img = this.shadowRoot.getElementById("preview-img");
+      if (img) {
+        const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
+        if (camera) img.src = `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}&t=${Date.now()}`;
+      }
+    }, 5000);
+  }
   async _displayUrl() {
     const v = this.shadowRoot.getElementById("url-input")?.value?.trim();
     if (!v) return;
