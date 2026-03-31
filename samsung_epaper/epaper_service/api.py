@@ -13,21 +13,30 @@ from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Upload
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 
+from croniter import croniter
+
 from . import __version__
 from .config import AppConfig
 from .content_server import router as content_router, set_dependencies
 from .database import (
     AssetRepository,
+    CollectionRepository,
+    FavouriteRepository,
     HistoryRepository,
     PresetRepository,
+    ScheduleRepository,
     init_db,
 )
 from .image_processor import ImageProcessor
 from .mdc_client import MDCClient
 from .models import (
+    CollectionCreate,
     DisplayAssetRequest,
+    FavouriteCreate,
     PresetCreate,
     PresetUpdate,
+    ScheduleCreate,
+    ScheduleUpdate,
     ServiceStatus,
     UpdateRequest,
     UpdateResponse,
@@ -59,6 +68,9 @@ async def lifespan(app: FastAPI):
     asset_repo = AssetRepository(db)
     history_repo = HistoryRepository(db)
     preset_repo = PresetRepository(db)
+    schedule_repo = ScheduleRepository(db)
+    collection_repo = CollectionRepository(db)
+    favourite_repo = FavouriteRepository(db)
 
     mdc = MDCClient(config)
     processor = ImageProcessor(config.viewport_width, config.viewport_height)
@@ -85,6 +97,9 @@ async def lifespan(app: FastAPI):
     app.state.asset_repo = asset_repo
     app.state.history_repo = history_repo
     app.state.preset_repo = preset_repo
+    app.state.schedule_repo = schedule_repo
+    app.state.collection_repo = collection_repo
+    app.state.favourite_repo = favourite_repo
     app.state.mdc = mdc
     app.state.processor = processor
     app.state.assets_dir = assets_dir
@@ -102,14 +117,76 @@ async def lifespan(app: FastAPI):
         app.state.last_update_status = None
         app.state.current_asset_id = None
 
+    # Compute initial next_run_at for all enabled schedules
+    schedules = await schedule_repo.list()
+    for sched in schedules:
+        if sched.is_enabled and croniter.is_valid(sched.cron_expression):
+            cron = croniter(sched.cron_expression, datetime.now())
+            next_run = cron.get_next(datetime)
+            await schedule_repo.update_last_run(
+                sched.id,
+                last_run_at=sched.last_run_at.isoformat() if sched.last_run_at else None,
+                next_run_at=next_run.isoformat(),
+            )
+
+    # Start background scheduler
+    scheduler_task = asyncio.create_task(_run_scheduler(app))
+
     logger.info(f"Samsung ePaper service v{__version__} started")
     logger.info(f"Display: {config.display_ip}:{config.display_port}")
     logger.info(f"Public URL: {config.public_base_url}")
 
     yield
 
+    scheduler_task.cancel()
+    try:
+        await scheduler_task
+    except asyncio.CancelledError:
+        pass
     await db.close()
     logger.info("Service shut down")
+
+
+async def _run_scheduler(app: FastAPI) -> None:
+    """Background loop that checks enabled schedules every 60 seconds."""
+    logger.info("Schedule background task started")
+    try:
+        while True:
+            await asyncio.sleep(60)
+            try:
+                schedule_repo: ScheduleRepository = app.state.schedule_repo
+                schedules = await schedule_repo.list()
+                now = datetime.now()
+                for sched in schedules:
+                    if not sched.is_enabled:
+                        continue
+                    if not croniter.is_valid(sched.cron_expression):
+                        continue
+                    # Check if the schedule should fire: next_run_at <= now
+                    if sched.next_run_at and sched.next_run_at <= now:
+                        logger.info(
+                            f"Schedule '{sched.name}' firing "
+                            f"(preset_id={sched.preset_id})"
+                        )
+                        try:
+                            await perform_update(app, preset_id=sched.preset_id)
+                        except Exception:
+                            logger.exception(
+                                f"Schedule '{sched.name}' update failed"
+                            )
+                        # Compute next run
+                        cron = croniter(sched.cron_expression, now)
+                        next_run = cron.get_next(datetime)
+                        await schedule_repo.update_last_run(
+                            sched.id,
+                            last_run_at=now.isoformat(),
+                            next_run_at=next_run.isoformat(),
+                        )
+            except Exception:
+                logger.exception("Scheduler tick failed")
+    except asyncio.CancelledError:
+        logger.info("Schedule background task stopped")
+        raise
 
 
 def create_app() -> FastAPI:
@@ -249,11 +326,31 @@ def create_app() -> FastAPI:
         content = await file.read()
         await asyncio.to_thread(original_path.write_bytes, content)
 
+        # Check for duplicate
+        image_hash = await processor.compute_hash(original_path)
+        existing = await app.state.asset_repo.get_by_hash(image_hash)
+        if existing and existing.filename_processed:
+            logger.info(f"Skipping duplicate image (hash: {image_hash})")
+            original_path.unlink(missing_ok=True)
+            success = await push_asset_to_display(app, existing.id)
+            if success:
+                app.state.current_asset_id = existing.id
+                app.state.last_update_status = "success"
+            app.state.last_update = datetime.now()
+            return {
+                "status": "sent" if success else "failed",
+                "asset_id": existing.id,
+                "width": existing.width,
+                "height": existing.height,
+                "duplicate": True,
+            }
+
         # Create asset record
         db_asset_id = await app.state.asset_repo.create(
             source_type="upload",
             filename_original=original_name,
             title=title,
+            sha256=image_hash,
         )
 
         # Crop if requested
@@ -321,25 +418,40 @@ def create_app() -> FastAPI:
                 image_data = await resp.read()
 
         assets_dir = app.state.assets_dir
+        processor = app.state.processor
         asset_id = str(uuid.uuid4())
         original_name = f"{asset_id}_url.png"
         original_path = assets_dir / "originals" / original_name
         await asyncio.to_thread(original_path.write_bytes, image_data)
+
+        # Check for duplicate
+        image_hash = await processor.compute_hash(original_path)
+        existing = await app.state.asset_repo.get_by_hash(image_hash)
+        if existing and existing.filename_processed:
+            logger.info(f"Skipping duplicate image (hash: {image_hash})")
+            original_path.unlink(missing_ok=True)
+            success = await push_asset_to_display(app, existing.id)
+            if success:
+                app.state.current_asset_id = existing.id
+                app.state.last_update_status = "success"
+            app.state.last_update = datetime.now()
+            return {"status": "sent" if success else "failed", "asset_id": existing.id, "duplicate": True}
 
         db_asset_id = await app.state.asset_repo.create(
             source_type="url",
             filename_original=original_name,
             source_id=url,
             title=title,
+            sha256=image_hash,
         )
 
         processed_name = f"{asset_id}_processed.png"
         processed_path = assets_dir / "processed" / processed_name
-        info = await app.state.processor.process(original_path, processed_path)
+        info = await processor.process(original_path, processed_path)
 
         thumb_name = f"{asset_id}_thumb.jpg"
         thumb_path = assets_dir / "thumbnails" / thumb_name
-        await app.state.processor.generate_thumbnail(processed_path, thumb_path)
+        await processor.generate_thumbnail(processed_path, thumb_path)
 
         await app.state.asset_repo.update_processed(
             asset_id=db_asset_id,
@@ -348,6 +460,7 @@ def create_app() -> FastAPI:
             width=info.width,
             height=info.height,
             file_size=info.file_size,
+            sha256=image_hash,
         )
 
         success = await push_asset_to_display(app, db_asset_id)
@@ -460,6 +573,211 @@ def create_app() -> FastAPI:
         entries = await app.state.history_repo.list(limit=limit)
         return [e.model_dump(mode="json") for e in entries]
 
+    # --- Collections ---
+
+    @app.get("/api/collections")
+    async def list_collections(parent_id: Optional[str] = Query(default=None)):
+        collections = await app.state.collection_repo.list(parent_id=parent_id)
+        return [c.model_dump(mode="json") for c in collections]
+
+    @app.get("/api/collections/tree")
+    async def get_collection_tree():
+        return await app.state.collection_repo.get_tree()
+
+    @app.post("/api/collections")
+    async def create_collection(request: CollectionCreate):
+        if request.parent_id:
+            parent = await app.state.collection_repo.get(request.parent_id)
+            if not parent:
+                raise HTTPException(status_code=404, detail="Parent collection not found")
+        try:
+            collection_id = await app.state.collection_repo.create(
+                name=request.name,
+                parent_id=request.parent_id,
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=409, detail=f"Collection name '{request.name}' already exists"
+            )
+        return {"id": collection_id, "status": "created"}
+
+    @app.put("/api/collections/{collection_id}")
+    async def rename_collection(collection_id: str, request: CollectionCreate):
+        collection = await app.state.collection_repo.get(collection_id)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        try:
+            await app.state.collection_repo.rename(collection_id, request.name)
+        except Exception:
+            raise HTTPException(
+                status_code=409, detail=f"Collection name '{request.name}' already exists"
+            )
+        return {"status": "updated"}
+
+    @app.delete("/api/collections/{collection_id}")
+    async def delete_collection(collection_id: str):
+        collection = await app.state.collection_repo.get(collection_id)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        if await app.state.collection_repo.has_children(collection_id):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete collection with child collections. Delete children first.",
+            )
+        if await app.state.collection_repo.has_favourites(collection_id):
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete collection with favourites. Remove favourites first.",
+            )
+        await app.state.collection_repo.delete(collection_id)
+        return {"status": "deleted"}
+
+    # --- Favourites ---
+
+    @app.get("/api/favourites")
+    async def list_favourites(collection_id: Optional[str] = Query(default=None)):
+        favourites = await app.state.favourite_repo.list(collection_id=collection_id)
+        return [f.model_dump(mode="json") for f in favourites]
+
+    @app.post("/api/favourites")
+    async def add_favourite(request: FavouriteCreate):
+        asset = await app.state.asset_repo.get(request.asset_id)
+        if not asset:
+            raise HTTPException(status_code=404, detail="Asset not found")
+        if request.collection_id:
+            collection = await app.state.collection_repo.get(request.collection_id)
+            if not collection:
+                raise HTTPException(status_code=404, detail="Collection not found")
+        try:
+            favourite_id = await app.state.favourite_repo.add(
+                asset_id=request.asset_id,
+                collection_id=request.collection_id,
+                name=request.name,
+            )
+        except Exception:
+            raise HTTPException(
+                status_code=409,
+                detail="Asset is already in this collection",
+            )
+        return {"id": favourite_id, "status": "created"}
+
+    @app.delete("/api/favourites/{favourite_id}")
+    async def remove_favourite(favourite_id: str):
+        favourite = await app.state.favourite_repo.get(favourite_id)
+        if not favourite:
+            raise HTTPException(status_code=404, detail="Favourite not found")
+        await app.state.favourite_repo.remove(favourite_id)
+        return {"status": "deleted"}
+
+    @app.post("/api/favourites/{favourite_id}/display")
+    async def display_favourite(favourite_id: str):
+        favourite = await app.state.favourite_repo.get(favourite_id)
+        if not favourite:
+            raise HTTPException(status_code=404, detail="Favourite not found")
+        asset = await app.state.asset_repo.get(favourite.asset_id)
+        if not asset or not asset.filename_processed:
+            raise HTTPException(status_code=404, detail="Asset not found or not processed")
+        await push_asset_to_display(app, asset.id)
+        return {"status": "sent", "asset_id": asset.id}
+
+    # --- Schedules ---
+
+    @app.get("/api/schedules")
+    async def list_schedules():
+        schedules = await app.state.schedule_repo.list()
+        return [s.model_dump(mode="json") for s in schedules]
+
+    @app.post("/api/schedules")
+    async def create_schedule(request: ScheduleCreate):
+        # Validate preset exists
+        preset = await app.state.preset_repo.get(request.preset_id)
+        if not preset:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Preset '{request.preset_id}' not found",
+            )
+        # Validate cron expression
+        if not croniter.is_valid(request.cron_expression):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid cron expression: '{request.cron_expression}'",
+            )
+        schedule_id = await app.state.schedule_repo.create(
+            name=request.name,
+            preset_id=request.preset_id,
+            cron_expression=request.cron_expression,
+        )
+        # Compute initial next_run_at
+        cron = croniter(request.cron_expression, datetime.now())
+        next_run = cron.get_next(datetime)
+        await app.state.schedule_repo.update_last_run(
+            schedule_id, last_run_at=None, next_run_at=next_run.isoformat()
+        )
+        return {"id": schedule_id, "status": "created"}
+
+    @app.put("/api/schedules/{schedule_id}")
+    async def update_schedule(schedule_id: str, request: ScheduleUpdate):
+        schedule = await app.state.schedule_repo.get(schedule_id)
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        # Validate preset if being changed
+        if request.preset_id is not None:
+            preset = await app.state.preset_repo.get(request.preset_id)
+            if not preset:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Preset '{request.preset_id}' not found",
+                )
+        # Validate cron if being changed
+        if request.cron_expression is not None:
+            if not croniter.is_valid(request.cron_expression):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid cron expression: '{request.cron_expression}'",
+                )
+        await app.state.schedule_repo.update(
+            schedule_id,
+            name=request.name,
+            preset_id=request.preset_id,
+            cron_expression=request.cron_expression,
+            is_enabled=request.is_enabled,
+        )
+        # Recompute next_run_at if cron changed or schedule re-enabled
+        effective_cron = request.cron_expression or schedule.cron_expression
+        if request.cron_expression is not None or request.is_enabled is True:
+            cron = croniter(effective_cron, datetime.now())
+            next_run = cron.get_next(datetime)
+            await app.state.schedule_repo.update_last_run(
+                schedule_id,
+                last_run_at=schedule.last_run_at.isoformat() if schedule.last_run_at else None,
+                next_run_at=next_run.isoformat(),
+            )
+        return {"status": "updated"}
+
+    @app.delete("/api/schedules/{schedule_id}")
+    async def delete_schedule(schedule_id: str):
+        schedule = await app.state.schedule_repo.get(schedule_id)
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        await app.state.schedule_repo.delete(schedule_id)
+        return {"status": "deleted"}
+
+    @app.post("/api/schedules/{schedule_id}/run")
+    async def run_schedule(
+        schedule_id: str, background_tasks: BackgroundTasks
+    ):
+        schedule = await app.state.schedule_repo.get(schedule_id)
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        if app.state.update_lock.locked():
+            raise HTTPException(status_code=409, detail="Update already in progress")
+        background_tasks.add_task(perform_update, app, schedule.preset_id)
+        return {
+            "status": "started",
+            "message": f"Schedule '{schedule.name}' triggered manually",
+            "preset_id": schedule.preset_id,
+        }
+
     return app
 
 
@@ -497,6 +815,25 @@ async def perform_update(
             cache_dir.mkdir(exist_ok=True)
             raw_path, metadata = await source.fetch(preset.source_config, cache_dir)
 
+            # 2b. Compute hash and check for duplicate
+            image_hash = await processor.compute_hash(raw_path)
+            existing = await asset_repo.get_by_hash(image_hash)
+            if existing and existing.filename_processed:
+                logger.info(
+                    f"Skipping duplicate image (hash: {image_hash})"
+                )
+                # Clean up the downloaded file
+                raw_path.unlink(missing_ok=True)
+                # Push existing asset to display
+                success = await push_asset_to_display(app, existing.id)
+                if success:
+                    app.state.last_update_status = "success"
+                    app.state.current_asset_id = existing.id
+                    logger.info(f"Reused existing asset: {existing.id}")
+                else:
+                    app.state.last_update_status = "failed"
+                return existing.id
+
             # 3. Create asset record
             asset_id = await asset_repo.create(
                 source_type=preset.source_type,
@@ -504,6 +841,7 @@ async def perform_update(
                 source_id=metadata.get("source_id"),
                 title=metadata.get("title"),
                 metadata_json=metadata.get("metadata_json"),
+                sha256=image_hash,
             )
 
             # Move original to storage (shutil.move handles cross-filesystem)

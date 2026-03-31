@@ -12,6 +12,8 @@ from .const import (
     CONF_ADDON_URL,
     DOMAIN,
     PLATFORMS,
+    SERVICE_CREATE_SCHEDULE,
+    SERVICE_DELETE_SCHEDULE,
     SERVICE_DISPLAY_ASSET,
     SERVICE_DISPLAY_PRESET,
     SERVICE_DISPLAY_URL,
@@ -32,6 +34,16 @@ SERVICE_DISPLAY_URL_SCHEMA = vol.Schema(
         vol.Required("url"): str,
         vol.Optional("title", default="URL Image"): str,
     }
+)
+SERVICE_CREATE_SCHEDULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): str,
+        vol.Required("preset_id"): str,
+        vol.Required("cron_expression"): str,
+    }
+)
+SERVICE_DELETE_SCHEDULE_SCHEMA = vol.Schema(
+    {vol.Required("schedule_id"): str}
 )
 
 
@@ -58,7 +70,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
         if not hass.data[DOMAIN]:
-            for service in (SERVICE_DISPLAY_PRESET, SERVICE_DISPLAY_ASSET, SERVICE_DISPLAY_URL, SERVICE_REFRESH):
+            for service in (
+                SERVICE_DISPLAY_PRESET, SERVICE_DISPLAY_ASSET,
+                SERVICE_DISPLAY_URL, SERVICE_REFRESH,
+                SERVICE_CREATE_SCHEDULE, SERVICE_DELETE_SCHEDULE,
+            ):
                 hass.services.async_remove(DOMAIN, service)
     return unload_ok
 
@@ -102,6 +118,24 @@ def _async_setup_services(hass: HomeAssistant) -> None:
             await client.async_trigger_update()
             await coordinator.async_request_refresh()
 
+    async def handle_create_schedule(call: ServiceCall) -> None:
+        name = call.data["name"]
+        preset_id = call.data["preset_id"]
+        cron_expression = call.data["cron_expression"]
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            client = entry_data["client"]
+            coordinator = entry_data["coordinator"]
+            await client.async_create_schedule(name, preset_id, cron_expression)
+            await coordinator.async_request_refresh()
+
+    async def handle_delete_schedule(call: ServiceCall) -> None:
+        schedule_id = call.data["schedule_id"]
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            client = entry_data["client"]
+            coordinator = entry_data["coordinator"]
+            await client.async_delete_schedule(schedule_id)
+            await coordinator.async_request_refresh()
+
     hass.services.async_register(
         DOMAIN, SERVICE_DISPLAY_PRESET, handle_display_preset,
         schema=SERVICE_DISPLAY_PRESET_SCHEMA,
@@ -115,3 +149,11 @@ def _async_setup_services(hass: HomeAssistant) -> None:
         schema=SERVICE_DISPLAY_URL_SCHEMA,
     )
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)
+    hass.services.async_register(
+        DOMAIN, SERVICE_CREATE_SCHEDULE, handle_create_schedule,
+        schema=SERVICE_CREATE_SCHEDULE_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DELETE_SCHEDULE, handle_delete_schedule,
+        schema=SERVICE_DELETE_SCHEDULE_SCHEMA,
+    )

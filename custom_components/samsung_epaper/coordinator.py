@@ -79,6 +79,42 @@ class SamsungEpaperApiClient:
             resp.raise_for_status()
             return await resp.json()
 
+    async def async_get_schedules(self) -> list[dict]:
+        async with self.session.get(f"{self.base_url}/api/schedules") as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_create_schedule(
+        self, name: str, preset_id: str, cron_expression: str
+    ) -> dict:
+        async with self.session.post(
+            f"{self.base_url}/api/schedules",
+            json={
+                "name": name,
+                "preset_id": preset_id,
+                "cron_expression": cron_expression,
+            },
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_update_schedule(
+        self, schedule_id: str, **kwargs
+    ) -> dict:
+        async with self.session.put(
+            f"{self.base_url}/api/schedules/{schedule_id}",
+            json=kwargs,
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_delete_schedule(self, schedule_id: str) -> dict:
+        async with self.session.delete(
+            f"{self.base_url}/api/schedules/{schedule_id}"
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def async_health_check(self) -> bool:
         try:
             async with self.session.get(
@@ -100,11 +136,13 @@ class SamsungEpaperCoordinator(DataUpdateCoordinator):
         )
         self.client = client
         self.presets: list[dict] = []
+        self.schedules: list[dict] = []
 
     async def _async_update_data(self) -> dict:
         try:
             status = await self.client.async_get_status()
             self.presets = await self.client.async_get_presets()
+            self.schedules = await self.client.async_get_schedules()
             return status
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Error communicating with addon: {err}") from err

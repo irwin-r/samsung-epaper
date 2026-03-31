@@ -41,3 +41,37 @@ display_url:
 refresh:
   name: Refresh Display
   description: Fetch new content from the active source and update display
+
+create_schedule:
+  name: Create Schedule
+  description: Create a new schedule that runs a preset on a cron expression
+  fields:
+    name:
+      name: Schedule Name
+      description: Human-readable name for the schedule
+      required: true
+      selector:
+        text:
+    preset_id:
+      name: Preset ID
+      description: ID of the preset to run on schedule
+      required: true
+      selector:
+        text:
+    cron_expression:
+      name: Cron Expression
+      description: "Cron expression (minute hour day_of_month month day_of_week)"
+      required: true
+      selector:
+        text:
+
+delete_schedule:
+  name: Delete Schedule
+  description: Delete a schedule by ID
+  fields:
+    schedule_id:
+      name: Schedule ID
+      description: ID of the schedule to delete
+      required: true
+      selector:
+        text:

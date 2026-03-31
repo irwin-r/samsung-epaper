@@ -18,6 +18,7 @@ class Asset(BaseModel):
     height: Optional[int] = None
     file_size: Optional[int] = None
     mime_type: str = "image/png"
+    sha256: Optional[str] = None
     created_at: datetime
     metadata_json: Optional[str] = None
 
@@ -98,3 +99,53 @@ class ImageInfo(BaseModel):
     width: int
     height: int
     file_size: int
+
+
+class Collection(BaseModel):
+    id: str
+    name: str
+    parent_id: Optional[str] = None
+    created_at: datetime
+
+
+class CollectionCreate(BaseModel):
+    name: str
+    parent_id: Optional[str] = None
+
+
+class Favourite(BaseModel):
+    id: str
+    asset_id: str
+    collection_id: Optional[str] = None
+    name: Optional[str] = None
+    added_at: datetime
+
+
+class FavouriteCreate(BaseModel):
+    asset_id: str
+    collection_id: Optional[str] = None
+    name: Optional[str] = None
+
+
+class Schedule(BaseModel):
+    id: str
+    name: str
+    preset_id: str
+    cron_expression: str
+    is_enabled: bool = True
+    last_run_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = None
+    created_at: datetime
+
+
+class ScheduleCreate(BaseModel):
+    name: str
+    preset_id: str
+    cron_expression: str
+
+
+class ScheduleUpdate(BaseModel):
+    name: Optional[str] = None
+    preset_id: Optional[str] = None
+    cron_expression: Optional[str] = None
+    is_enabled: Optional[bool] = None

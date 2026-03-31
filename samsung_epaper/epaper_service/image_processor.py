@@ -1,6 +1,7 @@
 """Image processing with Pillow, run in thread pool to avoid blocking."""
 
 import asyncio
+import hashlib
 import logging
 from pathlib import Path
 
@@ -15,6 +16,19 @@ class ImageProcessor:
     def __init__(self, viewport_width: int = 1440, viewport_height: int = 2560):
         self.viewport_width = viewport_width
         self.viewport_height = viewport_height
+
+    @staticmethod
+    async def compute_hash(file_path: Path) -> str:
+        """Return the SHA-256 hex digest of a file without blocking the event loop."""
+
+        def _hash_sync() -> str:
+            h = hashlib.sha256()
+            with open(file_path, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+            return h.hexdigest()
+
+        return await asyncio.to_thread(_hash_sync)
 
     async def process(
         self,
