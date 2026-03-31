@@ -1,8 +1,8 @@
 /**
- * Samsung ePaper Display — Custom Lovelace Card v2
- * Side-by-side layout optimised for portrait displays.
+ * Samsung ePaper Display — Custom Lovelace Card v3
+ * Baroque-framed preview with controls below.
  */
-const CARD_VERSION = "2.0.0";
+const CARD_VERSION = "3.0.0";
 
 class SamsungEpaperCard extends HTMLElement {
   constructor() {
@@ -36,38 +36,36 @@ class SamsungEpaperCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const changed = !this._hass ||
+      this._hass.states?.["sensor.samsung_epaper_status"]?.state !== hass.states?.["sensor.samsung_epaper_status"]?.state ||
+      this._hass.states?.["camera.samsung_epaper_display_preview"]?.attributes?.access_token !== hass.states?.["camera.samsung_epaper_display_preview"]?.attributes?.access_token;
     this._hass = hass;
-    this._render();
+    if (changed) this._render();
   }
 
-  static getStubConfig() {
-    return { addon_url: "http://192.168.50.84:8000" };
-  }
-
-  _url(path) { return `${this._config.addon_url}${path}`; }
+  static getStubConfig() { return { addon_url: "http://192.168.50.84:8000" }; }
+  _url(p) { return `${this._config.addon_url}${p}`; }
 
   async _loadHistory() {
     try {
       const r = await fetch(this._url("/api/assets?limit=30"));
       if (r.ok) { this._assets = await r.json(); this._render(); }
-    } catch (e) { console.error("History load failed:", e); }
+    } catch (e) { console.error("History:", e); }
   }
 
-  async _svc(service, data = {}) {
+  async _svc(s, d = {}) {
     if (!this._hass) return;
-    await this._hass.callService("samsung_epaper", service, data);
+    await this._hass.callService("samsung_epaper", s, d);
     setTimeout(() => this._loadHistory(), 3000);
   }
 
-  _toast(msg) {
+  _toast(m) {
     const t = this.shadowRoot.getElementById("toast");
-    if (t) { t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 3000); }
+    if (t) { t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 3000); }
   }
 
   async _refresh() { this._toast("Refreshing..."); await this._svc("refresh"); }
-
   async _displayAsset(id) { this._toast("Sending..."); await this._svc("display_asset", { asset_id: id }); }
-
   async _displayUrl() {
     const v = this.shadowRoot.getElementById("url-input")?.value?.trim();
     if (!v) return;
@@ -101,18 +99,17 @@ class SamsungEpaperCard extends HTMLElement {
     if (!c || !this._cropImage) return;
     const ctx = c.getContext("2d");
     const dw = this._config.display_width, dh = this._config.display_height;
-    const ch = c.parentElement?.clientHeight || 400;
+    const ch = c.parentElement?.clientHeight || 350;
     const cw = ch * (dw / dh);
     c.width = cw; c.height = ch;
-    const ds = ch / dh;
     ctx.fillStyle = "#111"; ctx.fillRect(0, 0, cw, ch);
-    const img = this._cropImage, s = this._cropScale;
+    const img = this._cropImage, s = this._cropScale, ds = ch / dh;
     ctx.drawImage(img, 0, 0, img.width, img.height,
       this._cropX * ds, this._cropY * ds, img.width * s * ds, img.height * s * ds);
     ctx.strokeStyle = "rgba(255,255,255,0.15)"; ctx.lineWidth = 1;
     for (let i = 1; i < 3; i++) {
-      ctx.beginPath(); ctx.moveTo(cw / 3 * i, 0); ctx.lineTo(cw / 3 * i, ch); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, ch / 3 * i); ctx.lineTo(cw, ch / 3 * i); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cw/3*i, 0); ctx.lineTo(cw/3*i, ch); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, ch/3*i); ctx.lineTo(cw, ch/3*i); ctx.stroke();
     }
   }
 
@@ -140,8 +137,8 @@ class SamsungEpaperCard extends HTMLElement {
   async _uploadCropped() {
     if (!this._cropFile || !this._cropImage) return;
     this._toast("Uploading...");
+    const s = this._cropScale, img = this._cropImage;
     const dw = this._config.display_width, dh = this._config.display_height;
-    const img = this._cropImage, s = this._cropScale;
     const cx = Math.max(0, -this._cropX / s), cy = Math.max(0, -this._cropY / s);
     const cw = Math.min(img.width - cx, dw / s), ch = Math.min(img.height - cy, dh / s);
     const fd = new FormData(); fd.append("file", this._cropFile);
@@ -153,11 +150,11 @@ class SamsungEpaperCard extends HTMLElement {
     try {
       const r = await fetch(this._url(`/api/upload?${p}`), { method: "POST", body: fd });
       const d = await r.json();
+      this._toast(d.status === "sent" ? "Sent!" : "Failed");
       if (d.status === "sent") {
-        this._toast("Sent!");
         this._cropImage = null; this._cropFile = null;
         setTimeout(() => this._loadHistory(), 2000);
-      } else { this._toast("Failed"); }
+      }
     } catch (e) { this._toast("Error: " + e.message); }
     this._render();
   }
@@ -168,117 +165,168 @@ class SamsungEpaperCard extends HTMLElement {
     const preset = this._hass?.states?.["select.samsung_epaper_active_preset"];
     const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
     const reachable = this._hass?.states?.["binary_sensor.samsung_epaper_reachable"];
-    const camUrl = camera ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}&t=${Date.now()}` : "";
+    const camUrl = camera
+      ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}&t=${Date.now()}`
+      : "";
 
     this.shadowRoot.innerHTML = `
       <style>
         :host { display:block; font-family:var(--primary-font-family,sans-serif); }
+
+        /* --- Baroque Frame --- */
+        .frame-container {
+          display:flex; justify-content:center; padding:20px 20px 0;
+        }
+        .baroque-frame {
+          position:relative; display:inline-block;
+          padding:12px;
+          background: linear-gradient(135deg, #8B6914 0%, #D4A843 15%, #F5D98A 30%, #D4A843 45%, #8B6914 55%, #D4A843 70%, #F5D98A 85%, #8B6914 100%);
+          border-radius:4px;
+          box-shadow:
+            0 0 0 2px #6B4F0A,
+            0 0 0 4px #D4A843,
+            0 0 0 6px #6B4F0A,
+            inset 0 0 8px rgba(0,0,0,0.5),
+            4px 6px 20px rgba(0,0,0,0.4),
+            inset 2px 2px 4px rgba(255,235,180,0.3);
+        }
+        .baroque-frame::before {
+          content:'';
+          position:absolute; top:4px; left:4px; right:4px; bottom:4px;
+          border:2px solid rgba(139,105,20,0.6);
+          border-radius:2px;
+          pointer-events:none;
+        }
+        .baroque-frame::after {
+          content:'';
+          position:absolute; top:8px; left:8px; right:8px; bottom:8px;
+          border:1px solid rgba(212,168,67,0.4);
+          pointer-events:none;
+        }
+        .frame-inner {
+          position:relative;
+          width:160px; height:284px;
+          overflow:hidden; background:#111;
+          box-shadow: inset 0 0 12px rgba(0,0,0,0.8);
+        }
+        .frame-inner img {
+          width:100%; height:100%; object-fit:cover;
+          display:block;
+        }
+        .frame-placeholder {
+          width:100%; height:100%;
+          display:flex; align-items:center; justify-content:center;
+          color:#555; font-size:12px; text-align:center; padding:16px;
+        }
+        .frame-info {
+          text-align:center; padding:8px 0 4px; font-size:11px;
+          color:var(--secondary-text-color);
+        }
+
+        /* --- Card --- */
         .card {
           background:var(--ha-card-background,var(--card-background-color,#fff));
           border-radius:var(--ha-card-border-radius,12px);
           box-shadow:var(--ha-card-box-shadow,0 2px 6px rgba(0,0,0,.15));
           padding:16px; color:var(--primary-text-color);
+          margin-top:12px;
         }
-        .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
-        .header h2 { margin:0; font-size:18px; font-weight:500; }
-        .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px; }
+        .card-header {
+          display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;
+        }
+        .card-header h3 { margin:0; font-size:15px; font-weight:500; }
+        .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px; }
         .dot.on { background:#4caf50; } .dot.off { background:#f44336; }
-        .layout { display:flex; gap:16px; min-height:420px; }
-        .preview-col { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; }
-        .preview-frame {
-          width:180px; height:320px; border-radius:8px; overflow:hidden; background:#111;
-          display:flex; align-items:center; justify-content:center;
-        }
-        .preview-frame img { width:100%; height:100%; object-fit:cover; }
-        .preview-placeholder { color:#666; font-size:13px; text-align:center; padding:20px; }
-        .preview-info { margin-top:8px; font-size:11px; color:var(--secondary-text-color); text-align:center; }
-        .right-col { flex:1; min-width:0; display:flex; flex-direction:column; }
         .tabs { display:flex; gap:4px; margin-bottom:12px; }
         .tab {
-          padding:6px 14px; border-radius:6px; cursor:pointer; font-size:13px;
+          padding:5px 12px; border-radius:6px; cursor:pointer; font-size:12px;
           background:transparent; border:none; color:var(--secondary-text-color); font-family:inherit;
         }
         .tab.active { background:var(--primary-color,#03a9f4); color:#fff; }
         .tab:hover:not(.active) { background:var(--secondary-background-color,#f5f5f5); }
-        .tab-body { flex:1; overflow-y:auto; }
+        .tab-body { min-height:120px; }
         .btn {
-          padding:8px 16px; border-radius:6px; border:none; cursor:pointer;
-          font-size:13px; font-family:inherit; background:var(--primary-color,#03a9f4); color:#fff;
+          padding:7px 14px; border-radius:6px; border:none; cursor:pointer;
+          font-size:12px; font-family:inherit; background:var(--primary-color,#03a9f4); color:#fff;
         }
         .btn:hover { opacity:.85; }
-        .btn.sm { padding:6px 10px; font-size:12px; }
+        .btn.sm { padding:5px 10px; font-size:11px; }
         .btn.secondary { background:var(--secondary-background-color,#e0e0e0); color:var(--primary-text-color); }
-        .btn-row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
-        .url-row { display:flex; gap:8px; margin-top:8px; }
+        .btn-row { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+        .url-row { display:flex; gap:6px; margin-top:8px; }
         .url-row input {
-          flex:1; padding:8px 12px; border:1px solid var(--divider-color,#ccc);
-          border-radius:6px; font-size:13px; background:var(--card-background-color,#fff);
+          flex:1; padding:7px 10px; border:1px solid var(--divider-color,#ccc);
+          border-radius:6px; font-size:12px; background:var(--card-background-color,#fff);
           color:var(--primary-text-color); font-family:inherit;
         }
         .upload-area {
           border:2px dashed var(--divider-color,#ccc); border-radius:8px;
-          padding:32px; text-align:center; cursor:pointer;
+          padding:28px; text-align:center; cursor:pointer;
         }
         .upload-area:hover { border-color:var(--primary-color,#03a9f4); }
         .upload-area input[type=file] { display:none; }
-        .crop-wrap { height:380px; display:flex; align-items:center; justify-content:center; background:#111; border-radius:8px; overflow:hidden; }
+        .crop-wrap { height:320px; display:flex; align-items:center; justify-content:center; background:#111; border-radius:8px; overflow:hidden; }
         #crop-canvas { cursor:grab; display:block; height:100%; }
         #crop-canvas:active { cursor:grabbing; }
-        .crop-bar { display:flex; justify-content:center; gap:8px; margin-top:8px; align-items:center; font-size:12px; }
+        .crop-bar { display:flex; justify-content:center; gap:6px; margin-top:6px; align-items:center; font-size:11px; }
         .gallery {
-          display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr));
-          gap:8px;
+          display:grid; grid-template-columns:repeat(auto-fill,minmax(65px,1fr));
+          gap:6px;
         }
         .gallery-item {
-          aspect-ratio:9/16; border-radius:6px; overflow:hidden; cursor:pointer;
+          aspect-ratio:9/16; border-radius:5px; overflow:hidden; cursor:pointer;
           background:#111; transition:transform .15s,box-shadow .15s; position:relative;
         }
         .gallery-item:hover { transform:scale(1.05); box-shadow:0 2px 8px rgba(0,0,0,.3); }
         .gallery-item img { width:100%; height:100%; object-fit:cover; }
         .gallery-item .lbl {
           position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,.7);
-          color:#fff; font-size:9px; padding:2px 4px; white-space:nowrap;
+          color:#fff; font-size:8px; padding:2px 3px; white-space:nowrap;
           overflow:hidden; text-overflow:ellipsis;
         }
-        .empty { text-align:center; padding:24px; color:var(--secondary-text-color); font-size:13px; }
+        .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; }
         #toast {
           position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(80px);
-          background:var(--primary-color,#03a9f4); color:#fff; padding:10px 20px;
-          border-radius:8px; font-size:14px; transition:transform .3s; z-index:9999; pointer-events:none;
+          background:var(--primary-color,#03a9f4); color:#fff; padding:8px 18px;
+          border-radius:8px; font-size:13px; transition:transform .3s; z-index:9999; pointer-events:none;
         }
         #toast.show { transform:translateX(-50%) translateY(0); }
       </style>
+
+      <!-- Framed Preview -->
+      <div class="frame-container">
+        <div>
+          <div class="baroque-frame">
+            <div class="frame-inner">
+              ${camUrl
+                ? `<img src="${camUrl}" alt="Display" />`
+                : `<div class="frame-placeholder">No image displayed</div>`}
+            </div>
+          </div>
+          <div class="frame-info">
+            ${preset?.state || "No preset"} &middot;
+            ${status?.state === "updating" ? "Updating..." : (status?.attributes?.last_update ? new Date(status.attributes.last_update).toLocaleString() : "Never")}
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls Card -->
       <div class="card">
-        <div class="header">
-          <h2>${this._config.title}</h2>
-          <span style="font-size:12px;color:var(--secondary-text-color)">
+        <div class="card-header">
+          <h3>${this._config.title}</h3>
+          <span style="font-size:11px;color:var(--secondary-text-color)">
             <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
-            ${status?.state === "updating" ? "Updating..." : (reachable?.state === "on" ? "Online" : "Offline")}
+            ${reachable?.state === "on" ? "Online" : "Offline"}
           </span>
         </div>
-        <div class="layout">
-          <div class="preview-col">
-            <div class="preview-frame">
-              ${camUrl
-                ? `<img src="${camUrl}" alt="Preview" />`
-                : `<div class="preview-placeholder">No image yet</div>`}
-            </div>
-            <div class="preview-info">
-              ${preset?.state || "No preset"}<br/>
-              ${status?.attributes?.last_update ? new Date(status.attributes.last_update).toLocaleString() : "Never updated"}
-            </div>
-            <div class="btn-row" style="margin-top:8px">
-              <button class="btn sm" id="btn-refresh">Refresh</button>
-            </div>
-          </div>
-          <div class="right-col">
-            <div class="tabs">
-              <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
-              <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
-              <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
-            </div>
-            <div class="tab-body">${this._renderTab()}</div>
-          </div>
+        <div class="tabs">
+          <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
+          <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
+          <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
+        </div>
+        <div class="tab-body">${this._renderTab()}</div>
+        <div class="btn-row">
+          <button class="btn sm" id="btn-refresh">Refresh Display</button>
         </div>
       </div>
       <div id="toast"></div>
@@ -302,15 +350,15 @@ class SamsungEpaperCard extends HTMLElement {
         return `
           <div class="upload-area" id="upload-area">
             <input type="file" id="file-input" accept="image/*" />
-            <div style="font-size:28px;margin-bottom:6px">+</div>
-            <div>Select an image</div>
+            <div style="font-size:24px;margin-bottom:4px">+</div>
+            <div style="font-size:13px">Select an image</div>
             <div style="font-size:11px;color:var(--secondary-text-color);margin-top:4px">
-              Crop to ${this._config.display_width} x ${this._config.display_height}
+              Drag to position, scroll to zoom
             </div>
           </div>`;
       case "url":
         return `
-          <p style="font-size:13px;color:var(--secondary-text-color);margin:0 0 8px">
+          <p style="font-size:12px;color:var(--secondary-text-color);margin:0 0 6px">
             Paste an image URL to display on the panel.
           </p>
           <div class="url-row">
@@ -332,21 +380,18 @@ class SamsungEpaperCard extends HTMLElement {
   _bind() {
     this.shadowRoot.querySelectorAll(".tab").forEach(t =>
       t.addEventListener("click", () => {
-        this._activeTab = t.dataset.tab;
-        this._render();
+        this._activeTab = t.dataset.tab; this._render();
         if (t.dataset.tab === "history") this._loadHistory();
         if (t.dataset.tab === "upload" && this._cropImage)
           requestAnimationFrame(() => this._drawCrop());
       })
     );
     this.shadowRoot.getElementById("btn-refresh")?.addEventListener("click", () => this._refresh());
-
     if (this._activeTab === "upload") {
       const area = this.shadowRoot.getElementById("upload-area");
       const fi = this.shadowRoot.getElementById("file-input");
       area?.addEventListener("click", () => fi?.click());
       fi?.addEventListener("change", e => this._onFileSelect(e));
-
       const cv = this.shadowRoot.getElementById("crop-canvas");
       if (cv && this._cropImage) {
         cv.addEventListener("mousedown", e => this._onCropDown(e));
@@ -381,15 +426,13 @@ class SamsungEpaperCard extends HTMLElement {
     }
   }
 
-  getCardSize() { return 6; }
+  getCardSize() { return 8; }
 }
 
 customElements.define("samsung-epaper-card", SamsungEpaperCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "samsung-epaper-card",
-  name: "Samsung ePaper Display",
-  description: "Control your Samsung ePaper display",
-  preview: true,
+  type: "samsung-epaper-card", name: "Samsung ePaper Display",
+  description: "Control your Samsung ePaper display with baroque frame preview", preview: true,
 });
-console.info(`%c SAMSUNG-EPAPER %c v${CARD_VERSION} `, "color:#fff;background:#03a9f4;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px", "color:#03a9f4;background:#e3f2fd;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0");
+console.info(`%c SAMSUNG-EPAPER %c v${CARD_VERSION} `, "color:#fff;background:#8B6914;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px", "color:#8B6914;background:#FFF8E7;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0");

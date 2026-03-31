@@ -90,9 +90,17 @@ async def lifespan(app: FastAPI):
     app.state.assets_dir = assets_dir
     app.state.update_lock = asyncio.Lock()
     app.state.is_updating = False
-    app.state.last_update = None
-    app.state.last_update_status = None
-    app.state.current_asset_id = None
+
+    # Restore last state from history
+    latest = await history_repo.get_latest()
+    if latest:
+        app.state.last_update = latest.displayed_at
+        app.state.last_update_status = latest.status
+        app.state.current_asset_id = latest.asset_id
+    else:
+        app.state.last_update = None
+        app.state.last_update_status = None
+        app.state.current_asset_id = None
 
     logger.info(f"Samsung ePaper service v{__version__} started")
     logger.info(f"Display: {config.display_ip}:{config.display_port}")
