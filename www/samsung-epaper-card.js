@@ -2,7 +2,16 @@
  * Samsung ePaper Display — Custom Lovelace Card v3
  * Baroque-framed preview with controls below.
  */
-const CARD_VERSION = "3.0.0";
+const CARD_VERSION = "3.3.0";
+
+function timeAgo(dateStr) {
+  if (!dateStr) return "Never";
+  const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
 
 class SamsungEpaperCard extends HTMLElement {
   constructor() {
@@ -243,10 +252,6 @@ class SamsungEpaperCard extends HTMLElement {
           padding:16px; color:var(--primary-text-color);
           margin-top:12px;
         }
-        .card-header {
-          display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;
-        }
-        .card-header h3 { margin:0; font-size:15px; font-weight:500; }
         .dot { width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px; }
         .dot.on { background:#4caf50; } .dot.off { background:#f44336; }
         .tabs { display:flex; gap:4px; margin-bottom:12px; }
@@ -317,25 +322,23 @@ class SamsungEpaperCard extends HTMLElement {
             </div>
           </div>
           <div class="frame-info">
-            ${preset?.state || "No preset"}<br/>
-            ${status?.state === "updating" ? "Updating..." : (status?.attributes?.last_update ? new Date(status.attributes.last_update).toLocaleString() : "")}
+            ${preset?.state || "No preset"} &middot;
+            ${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}
           </div>
         </div>
 
         <!-- Right: Controls -->
         <div class="right-col">
           <div class="card">
-            <div class="card-header">
-              <h3>${this._config.title}</h3>
-              <span style="font-size:11px;color:var(--secondary-text-color)">
-                <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
-                ${reachable?.state === "on" ? "Online" : "Offline"}
-              </span>
-            </div>
             <div class="tabs">
               <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
               <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
+              <span style="flex:1"></span>
+              <span style="font-size:11px;color:var(--secondary-text-color);display:flex;align-items:center">
+                <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
+                ${reachable?.state === "on" ? "Online" : "Offline"}
+              </span>
             </div>
             <div class="tab-body">${this._renderTab()}</div>
             <div class="btn-row">
