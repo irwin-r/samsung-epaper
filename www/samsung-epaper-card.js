@@ -60,8 +60,27 @@ class SamsungEpaperCard extends HTMLElement {
 
   async _loadHistory() {
     try {
-      const r = await fetch(this._url("/api/assets?limit=30"));
-      if (r.ok) { this._assets = await r.json(); this._render(); }
+      // Fetch history (ordered by displayed_at) and assets for thumbnails
+      const [hRes, aRes] = await Promise.all([
+        fetch(this._url("/api/history?limit=30")),
+        fetch(this._url("/api/assets?limit=100")),
+      ]);
+      if (hRes.ok && aRes.ok) {
+        const history = await hRes.json();
+        const assets = await aRes.json();
+        const assetMap = {};
+        for (const a of assets) assetMap[a.id] = a;
+        // Deduplicate by asset_id, keep most recent display
+        const seen = new Set();
+        this._assets = [];
+        for (const h of history) {
+          if (!seen.has(h.asset_id) && assetMap[h.asset_id]?.filename_thumbnail) {
+            seen.add(h.asset_id);
+            this._assets.push(assetMap[h.asset_id]);
+          }
+        }
+        this._render();
+      }
     } catch (e) { console.error("History:", e); }
   }
 
@@ -243,11 +262,14 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .status-bar {
           display:flex; align-items:center; gap:8px;
-          padding:10px 0 2px; font-size:11px;
-          color:var(--secondary-text-color);
+          padding:0 0 12px; margin-bottom:10px; font-size:12px;
+          color:var(--primary-text-color);
+          border-bottom:1px solid var(--divider-color, #e8e8e8);
         }
-        .status-bar .meta { flex:1; min-width:0; }
-        .status-bar .meta span { opacity:0.7; }
+        .status-bar .meta { flex:1; min-width:0; display:flex; align-items:center; gap:6px; }
+        .status-bar .meta-label { font-weight:500; }
+        .status-bar .meta-sep { opacity:0.3; }
+        .status-bar .meta-time { opacity:0.5; font-size:11px; }
 
         /* --- Card (right side) --- */
         .right-col { flex:1; min-width:0; display:flex; flex-direction:column; }
@@ -348,16 +370,11 @@ class SamsungEpaperCard extends HTMLElement {
         <!-- Right: Controls -->
         <div class="right-col">
           <div class="card">
-            <div class="tabs">
-              <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
-              <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
-              <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
-            </div>
-            <div class="tab-body">${this._renderTab()}</div>
             <div class="status-bar">
               <div class="meta">
-                ${preset?.state || "No preset"} <span>&middot;</span>
-                ${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}
+                <span class="meta-label">${preset?.state || "No preset"}</span>
+                <span class="meta-sep">&middot;</span>
+                <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}</span>
               </div>
               <button class="btn-status ${reachable?.state === "on" ? "" : "offline"}" id="btn-refresh" title="Refresh display">
                 <span class="dot ${reachable?.state === "on" ? "on" : "off"}"></span>
@@ -368,6 +385,12 @@ class SamsungEpaperCard extends HTMLElement {
                 </svg>
               </button>
             </div>
+            <div class="tabs">
+              <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
+              <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
+              <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
+            </div>
+            <div class="tab-body">${this._renderTab()}</div>
           </div>
         </div>
       </div>
