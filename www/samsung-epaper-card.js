@@ -272,12 +272,74 @@ class SamsungEpaperCard extends HTMLElement {
 
   // --- Render ---
   _render() {
+    // If the shell is already built, just update dynamic parts
+    if (this.shadowRoot.getElementById("tab-body")) {
+      this._updateDynamic();
+      return;
+    }
+    this._renderFull();
+  }
+
+  _updateDynamic() {
+    const status = this._hass?.states?.["sensor.samsung_epaper_status"];
+    const preset = this._hass?.states?.["select.samsung_epaper_active_preset"];
+    const reachable = this._hass?.states?.["binary_sensor.samsung_epaper_reachable"];
+
+    // Update status bar text
+    const metaEl = this.shadowRoot.getElementById("status-meta");
+    if (metaEl) {
+      metaEl.innerHTML = `
+        <span class="meta-label">${preset?.state || "No preset"}</span>
+        <span class="meta-sep">&middot;</span>
+        <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}</span>
+      `;
+    }
+
+    // Update refresh button state
+    const refreshBtn = this.shadowRoot.getElementById("btn-refresh");
+    if (refreshBtn) {
+      const online = reachable?.state === "on";
+      refreshBtn.className = `btn-status ${online ? "" : "offline"}`;
+      refreshBtn.innerHTML = `
+        <span class="dot ${online ? "on" : "off"}"></span>
+        ${status?.state === "updating" ? "Updating..." : (online ? "Online" : "Offline")}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+      `;
+    }
+
+    // Update tab highlights
+    this.shadowRoot.querySelectorAll(".tab").forEach(t => {
+      t.classList.toggle("active", t.dataset.tab === this._activeTab);
+    });
+
+    // Update tab body content
+    const tabBody = this.shadowRoot.getElementById("tab-body");
+    if (tabBody) {
+      tabBody.innerHTML = this._renderTab();
+      this._bindTabContent();
+    }
+
+    // Update preview image (only if camera token changed)
+    const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
+    const camUrl = camera
+      ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}`
+      : "";
+    const previewImg = this.shadowRoot.getElementById("preview-img");
+    if (previewImg && camUrl && previewImg.getAttribute("src") !== camUrl) {
+      previewImg.setAttribute("src", camUrl);
+    }
+  }
+
+  _renderFull() {
     const status = this._hass?.states?.["sensor.samsung_epaper_status"];
     const preset = this._hass?.states?.["select.samsung_epaper_active_preset"];
     const camera = this._hass?.states?.["camera.samsung_epaper_display_preview"];
     const reachable = this._hass?.states?.["binary_sensor.samsung_epaper_reachable"];
     const camUrl = camera
-      ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}&t=${Date.now()}`
+      ? `/api/camera_proxy/${camera.entity_id}?token=${camera.attributes.access_token}`
       : "";
 
     this.shadowRoot.innerHTML = `
@@ -473,7 +535,7 @@ class SamsungEpaperCard extends HTMLElement {
           <div class="baroque-frame">
             <div class="frame-inner">
               ${camUrl
-                ? `<img src="${camUrl}" alt="Display" />`
+                ? `<img id="preview-img" src="${camUrl}" alt="Display" />`
                 : `<div class="frame-placeholder">No image displayed</div>`}
             </div>
           </div>
@@ -483,7 +545,7 @@ class SamsungEpaperCard extends HTMLElement {
         <div class="right-col">
           <div class="card">
             <div class="status-bar">
-              <div class="meta">
+              <div class="meta" id="status-meta">
                 <span class="meta-label">${preset?.state || "No preset"}</span>
                 <span class="meta-sep">&middot;</span>
                 <span class="meta-time">${status?.state === "updating" ? "Updating..." : timeAgo(status?.attributes?.last_update)}</span>
@@ -503,7 +565,7 @@ class SamsungEpaperCard extends HTMLElement {
               <button class="tab ${this._activeTab === "favourites" ? "active" : ""}" data-tab="favourites">Favourites</button>
               <button class="tab ${this._activeTab === "schedules" ? "active" : ""}" data-tab="schedules">Schedules</button>
             </div>
-            <div class="tab-body">${this._renderTab()}</div>
+            <div class="tab-body" id="tab-body">${this._renderTab()}</div>
           </div>
         </div>
       </div>
@@ -610,9 +672,11 @@ class SamsungEpaperCard extends HTMLElement {
   }
 
   _bind() {
+    // One-time shell bindings
     this.shadowRoot.querySelectorAll(".tab").forEach(t =>
       t.addEventListener("click", () => {
-        this._activeTab = t.dataset.tab; this._render();
+        this._activeTab = t.dataset.tab;
+        this._updateDynamic();
         if (t.dataset.tab === "history") this._loadHistory();
         if (t.dataset.tab === "favourites") this._loadFavourites();
         if (t.dataset.tab === "schedules") this._loadSchedules();
@@ -621,6 +685,10 @@ class SamsungEpaperCard extends HTMLElement {
       })
     );
     this.shadowRoot.getElementById("btn-refresh")?.addEventListener("click", () => this._refresh());
+    this._bindTabContent();
+  }
+
+  _bindTabContent() {
     if (this._activeTab === "upload") {
       const area = this.shadowRoot.getElementById("upload-area");
       const fi = this.shadowRoot.getElementById("file-input");
