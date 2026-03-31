@@ -387,7 +387,6 @@ class SamsungEpaperCard extends HTMLElement {
             </div>
             <div class="tabs">
               <button class="tab ${this._activeTab === "upload" ? "active" : ""}" data-tab="upload">Upload</button>
-              <button class="tab ${this._activeTab === "url" ? "active" : ""}" data-tab="url">URL</button>
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
             </div>
             <div class="tab-body">${this._renderTab()}</div>

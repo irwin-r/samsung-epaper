@@ -1,5 +1,7 @@
 """SQLite database with aiosqlite — schema, migrations, repositories."""
 
+from __future__ import annotations
+
 import json
 import logging
 import uuid
@@ -103,6 +105,14 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     db = await aiosqlite.connect(db_path)
     db.row_factory = aiosqlite.Row
     await db.execute("PRAGMA foreign_keys = ON")
+
+    # Migrate existing database: add columns that may not exist
+    try:
+        await db.execute("ALTER TABLE assets ADD COLUMN sha256 TEXT")
+        logger.info("Migration: added sha256 column to assets")
+    except Exception:
+        pass  # Column already exists
+
     await db.executescript(SCHEMA_SQL)
     # Record schema version
     await db.execute(
