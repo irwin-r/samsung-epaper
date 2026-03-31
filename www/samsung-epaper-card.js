@@ -429,7 +429,7 @@ class SamsungEpaperCard extends HTMLElement {
         .frame-wrap {
           position:relative;
           width:220px;
-          aspect-ratio:458/588;
+          aspect-ratio:1046/1367;
         }
         .frame-overlay {
           position:absolute; top:0; left:0; width:100%; height:100%;
@@ -438,7 +438,7 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .frame-inner {
           position:absolute;
-          top:15.3%; left:19.7%; right:19.4%; bottom:15.1%;
+          top:18.5%; left:21.7%; right:25.2%; bottom:15.8%;
           overflow:hidden; background:#111;
           z-index:1;
         }
