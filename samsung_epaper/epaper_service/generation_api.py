@@ -167,6 +167,7 @@ async def generate_frontpage(
         source_type="frontpages",
         title=pub["name"],
         source_id=pub["url"],
+        process_mode="contain",
         check_duplicate=True,
         push_to_display=True,
     )

@@ -523,7 +523,7 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .frame-overlay {
           position:absolute; top:0; left:0; width:100%; height:100%;
-          background:url('/local/frame.png?v=1') center/contain no-repeat;
+          background:url('/local/frame.png?v=6') center/contain no-repeat;
           z-index:2; pointer-events:none;
         }
         .frame-inner {

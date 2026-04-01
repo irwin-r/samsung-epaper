@@ -93,27 +93,45 @@ class ImageProcessor:
 
     @staticmethod
     def _detect_border_color(img: Image.Image) -> tuple[int, int, int]:
-        """Sample pixels along all four edges and return the most common color,
-        quantized to reduce near-white variation."""
+        """Sample pixels along all four edges, find the dominant color bucket,
+        then average the actual pixels in that bucket for precision."""
         rgb = img.convert("RGB")
         w, h = rgb.size
         pixels = []
 
-        # Sample edges (every 2nd pixel to keep it fast on large images)
-        for x in range(0, w, 2):
-            pixels.append(rgb.getpixel((x, 0)))           # top
-            pixels.append(rgb.getpixel((x, h - 1)))       # bottom
-        for y in range(0, h, 2):
-            pixels.append(rgb.getpixel((0, y)))            # left
-            pixels.append(rgb.getpixel((w - 1, y)))        # right
+        # Sample edges — a few rows/cols deep to avoid single-pixel artifacts
+        depth = min(3, w // 10, h // 10)
+        for d in range(depth):
+            for x in range(0, w, 2):
+                pixels.append(rgb.getpixel((x, d)))            # top rows
+                pixels.append(rgb.getpixel((x, h - 1 - d)))    # bottom rows
+            for y in range(0, h, 2):
+                pixels.append(rgb.getpixel((d, y)))             # left cols
+                pixels.append(rgb.getpixel((w - 1 - d, y)))     # right cols
 
-        # Quantize to nearest 8 to group near-identical shades
-        quantized = []
+        # Quantize into buckets of 16 to group similar shades
+        def bucket(c):
+            return ((c + 8) // 16) * 16
+
+        bucketed = {}
         for r, g, b in pixels:
-            quantized.append(((r // 8) * 8, (g // 8) * 8, (b // 8) * 8))
+            key = (bucket(r), bucket(g), bucket(b))
+            bucketed.setdefault(key, []).append((r, g, b))
 
-        color, _ = Counter(quantized).most_common(1)[0]
-        return color
+        # Find the largest bucket
+        dominant_key = max(bucketed, key=lambda k: len(bucketed[k]))
+        members = bucketed[dominant_key]
+
+        # Average the actual pixel values in the winning bucket
+        avg_r = round(sum(p[0] for p in members) / len(members))
+        avg_g = round(sum(p[1] for p in members) / len(members))
+        avg_b = round(sum(p[2] for p in members) / len(members))
+
+        # Snap near-white to pure white (avoids visible off-white margins)
+        if avg_r >= 245 and avg_g >= 245 and avg_b >= 245:
+            return (255, 255, 255)
+
+        return (avg_r, avg_g, avg_b)
 
     async def generate_thumbnail(
         self,
