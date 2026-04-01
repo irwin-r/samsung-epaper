@@ -125,6 +125,12 @@ class SamsungEpaperCard extends HTMLElement {
     } catch (e) { console.error("Gen types:", e); }
   }
 
+  _authHeaders() {
+    const h = {};
+    if (this._config.auth_token) h["Authorization"] = `Bearer ${this._config.auth_token}`;
+    return h;
+  }
+
   async _generateArt() {
     const fileInput = this.shadowRoot.getElementById("ai-file-input");
     const file = fileInput?.files?.[0];
@@ -134,7 +140,7 @@ class SamsungEpaperCard extends HTMLElement {
     fd.append("photo", file);
     fd.append("art_type", this._selectedArtType);
     try {
-      const r = await fetch(this._url("/api/generate/art"), { method: "POST", body: fd });
+      const r = await fetch(this._url("/api/generate/art"), { method: "POST", body: fd, headers: this._authHeaders() });
       const d = await r.json();
       if (d.job_id) {
         this._generatingJob = d.job_id;
@@ -151,7 +157,7 @@ class SamsungEpaperCard extends HTMLElement {
     try {
       const r = await fetch(this._url(`/api/generate/frontpage`), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { ...this._authHeaders(), "Content-Type": "application/json" },
         body: JSON.stringify({ newspaper: this._selectedNewspaper }),
       });
       const d = await r.json();
