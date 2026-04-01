@@ -59,19 +59,37 @@ class SamsungEpaperFavouriteSelect(SamsungEpaperEntity, SelectEntity):
         self._attr_unique_id = f"{entry.entry_id}_favourite"
         self._current = None
 
+    def _fav_name(self, f: dict, idx: int) -> str:
+        """Build a unique display name for a favourite."""
+        name = f.get("name") or f.get("asset_title") or f"Image {idx + 1}"
+        return name
+
+    def _fav_options(self) -> list[tuple[str, str]]:
+        """Return list of (display_name, fav_id) ensuring unique names."""
+        seen = {}
+        result = []
+        for i, f in enumerate(self.coordinator.favourites):
+            name = self._fav_name(f, i)
+            if name in seen:
+                seen[name] += 1
+                name = f"{name} ({seen[name]})"
+            else:
+                seen[name] = 1
+            result.append((name, f["id"]))
+        return result
+
     @property
     def options(self) -> list[str]:
-        return [f.get("name") or "Untitled" for f in self.coordinator.favourites]
+        return [name for name, _ in self._fav_options()]
 
     @property
     def current_option(self) -> str | None:
         return self._current
 
     async def async_select_option(self, option: str) -> None:
-        for f in self.coordinator.favourites:
-            name = f.get("name") or "Untitled"
+        for name, fav_id in self._fav_options():
             if name == option:
-                await self.coordinator.client.async_display_favourite(f["id"])
+                await self.coordinator.client.async_display_favourite(fav_id)
                 self._current = option
                 self.async_write_ha_state()
                 await self.coordinator.async_request_refresh()
