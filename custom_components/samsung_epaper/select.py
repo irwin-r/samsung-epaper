@@ -80,7 +80,8 @@ class SamsungEpaperFavouriteSelect(SamsungEpaperEntity, SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        return [name for name, _ in self._fav_options()]
+        opts = [name for name, _ in self._fav_options()]
+        return opts if opts else ["(No favourites)"]
 
     @property
     def current_option(self) -> str | None:
