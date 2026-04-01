@@ -34,7 +34,11 @@ SERVICE_DISPLAY_ASSET_SCHEMA = vol.Schema(
     {vol.Required("asset_id"): str}
 )
 SERVICE_DISPLAY_FAVOURITE_SCHEMA = vol.Schema(
-    {vol.Required("favourite_name"): str}
+    {
+        vol.Optional("favourite_id"): str,
+        vol.Optional("collection_id"): str,
+        vol.Optional("random", default=False): bool,
+    }
 )
 SERVICE_DISPLAY_URL_SCHEMA = vol.Schema(
     {
@@ -134,17 +138,35 @@ def _async_setup_services(hass: HomeAssistant) -> None:
             await coordinator.async_request_refresh()
 
     async def handle_display_favourite(call: ServiceCall) -> None:
-        favourite_name = call.data["favourite_name"]
+        import random as rand_mod
+        fav_id = call.data.get("favourite_id")
+        collection_id = call.data.get("collection_id")
+        use_random = call.data.get("random", False)
+
         for entry_data in hass.data.get(DOMAIN, {}).values():
             client = entry_data["client"]
             coordinator = entry_data["coordinator"]
-            # Find favourite by name
-            for f in coordinator.favourites:
-                if (f.get("name") or "") == favourite_name:
-                    await client.async_display_favourite(f["id"])
-                    await coordinator.async_request_refresh()
-                    return
-            _LOGGER.warning("Favourite '%s' not found", favourite_name)
+            favs = coordinator.favourites
+
+            if fav_id:
+                # Display a specific favourite by ID
+                target = next((f for f in favs if f["id"] == fav_id), None)
+            elif collection_id:
+                # Random from a specific folder
+                pool = [f for f in favs if f.get("collection_id") == collection_id]
+                target = rand_mod.choice(pool) if pool else None
+            elif use_random:
+                # Random from all favourites
+                target = rand_mod.choice(favs) if favs else None
+            else:
+                _LOGGER.warning("display_favourite: provide favourite_id, collection_id, or random")
+                return
+
+            if target:
+                await client.async_display_favourite(target["id"])
+                await coordinator.async_request_refresh()
+            else:
+                _LOGGER.warning("No matching favourite found")
 
     async def handle_refresh(call: ServiceCall) -> None:
         for entry_data in hass.data.get(DOMAIN, {}).values():

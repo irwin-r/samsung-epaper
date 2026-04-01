@@ -40,14 +40,27 @@ display_url:
 
 display_favourite:
   name: Display Favourite
-  description: Display a favourite by name on the ePaper display
+  description: Display a specific favourite or random from a folder
   fields:
-    favourite_name:
-      name: Favourite Name
-      description: The name of the favourite to display (as shown in the Favourites tab)
-      required: true
+    favourite_id:
+      name: Favourite ID
+      description: UUID of a specific favourite to display
+      required: false
       selector:
         text:
+    collection_id:
+      name: Folder ID
+      description: UUID of a folder — picks a random favourite from it
+      required: false
+      selector:
+        text:
+    random:
+      name: Random
+      description: Pick a random favourite from all favourites
+      required: false
+      default: false
+      selector:
+        boolean:
 
 refresh:
   name: Refresh Display
