@@ -72,7 +72,18 @@ class FrontpagesSource(ContentSource):
         logger.info(f"Downloaded: {output_path} ({len(image_data):,} bytes)")
 
         title_tag = soup.find("title")
-        title = title_tag.get_text(strip=True) if title_tag else "Newspaper Front Page"
+        raw_title = title_tag.get_text(strip=True) if title_tag else ""
+        # "The Sydney Morning Herald - Today's Front Page, 01/04/2026"
+        # → "The Sydney Morning Herald — 01/04/2026"
+        if " - Today's Front Page" in raw_title:
+            name, _, date_part = raw_title.partition(" - Today's Front Page")
+            date_str = date_part.lstrip(", ").strip()
+            title = f"{name} — {date_str}" if date_str else name
+        elif raw_title:
+            title = raw_title
+        else:
+            today = datetime.now().strftime("%d/%m/%Y")
+            title = f"Front Page — {today}"
 
         metadata = {
             "title": title,

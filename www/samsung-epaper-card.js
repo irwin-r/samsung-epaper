@@ -633,17 +633,26 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; flex:1; display:flex; align-items:center; justify-content:center; }
         .sub-tabs {
-          display:flex; gap:2px; margin-bottom:12px;
-          background:var(--secondary-background-color,#f0f0f0);
-          border-radius:8px; padding:3px;
+          display:flex; gap:0; margin-bottom:14px;
+          border:1px solid var(--divider-color,#e0e0e0);
+          border-radius:10px; overflow:hidden;
         }
         .sub-tab {
-          flex:1; padding:6px 8px; border-radius:6px; border:none; cursor:pointer;
-          font-size:11px; font-family:inherit; text-align:center;
+          flex:1; padding:9px 8px; border:none; cursor:pointer;
+          font-size:12px; font-family:inherit; text-align:center;
           background:transparent; color:var(--secondary-text-color);
-          transition:all .15s;
+          transition:all .2s; position:relative;
+          border-right:1px solid var(--divider-color,#e0e0e0);
         }
-        .sub-tab.active { background:var(--card-background-color,#fff); color:var(--primary-text-color); font-weight:500; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+        .sub-tab:last-child { border-right:none; }
+        .sub-tab:hover:not(.active) { background:var(--secondary-background-color,#f8f8f8); }
+        .sub-tab.active {
+          background:var(--primary-color,#03a9f4); color:#fff;
+          font-weight:600; letter-spacing:0.3px;
+          border-right-color:var(--primary-color,#03a9f4);
+        }
+        .sub-tab .sub-icon { display:block; font-size:16px; margin-bottom:2px; }
+        .sub-tab.active .sub-icon { filter:brightness(10); }
         .mode-select {
           width:100%; padding:8px 10px; border:1px solid var(--divider-color,#ccc);
           border-radius:6px; font-size:12px; font-family:inherit;
@@ -754,9 +763,21 @@ class SamsungEpaperCard extends HTMLElement {
       case "create":
         const subTabs = `
           <div class="sub-tabs">
-            <button class="sub-tab ${this._createMode === "upload" ? "active" : ""}" data-mode="upload">Upload</button>
-            <button class="sub-tab ${this._createMode === "ai" ? "active" : ""}" data-mode="ai">AI Art</button>
-            <button class="sub-tab ${this._createMode === "newspaper" ? "active" : ""}" data-mode="newspaper">Newspaper</button>
+            <button class="sub-tab ${this._createMode === "upload" ? "active" : ""}" data-mode="upload">
+              <span class="sub-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              </span>Upload
+            </button>
+            <button class="sub-tab ${this._createMode === "ai" ? "active" : ""}" data-mode="ai">
+              <span class="sub-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              </span>AI Art
+            </button>
+            <button class="sub-tab ${this._createMode === "newspaper" ? "active" : ""}" data-mode="newspaper">
+              <span class="sub-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 22h16a2 2 0 002-2V4a2 2 0 00-2-2H8a2 2 0 00-2 2v16a2 2 0 01-2 2zm0 0a2 2 0 01-2-2v-9c0-1.1.9-2 2-2h2"/><line x1="10" y1="6" x2="18" y2="6"/><line x1="10" y1="10" x2="18" y2="10"/><line x1="10" y1="14" x2="14" y2="14"/></svg>
+              </span>Newspaper
+            </button>
           </div>`;
 
         if (this._createMode === "upload") {

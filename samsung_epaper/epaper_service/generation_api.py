@@ -161,11 +161,14 @@ async def generate_frontpage(
         cache_dir,
     )
 
+    from datetime import datetime
+    today = datetime.now().strftime("%d %b %Y")
+
     result = await ingest_asset(
         _app_ref,
         raw_path,
         source_type="frontpages",
-        title=pub["name"],
+        title=f"{pub['name']} — {today}",
         source_id=pub["url"],
         process_mode="contain",
         check_duplicate=True,
