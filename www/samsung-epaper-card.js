@@ -529,16 +529,16 @@ class SamsungEpaperCard extends HTMLElement {
         .frame-wrap {
           position:relative;
           width:220px;
-          aspect-ratio:416/674;
+          aspect-ratio:437/679;
         }
         .frame-overlay {
           position:absolute; top:0; left:0; width:100%; height:100%;
-          background:url('/local/frame.png?v=6') center/contain no-repeat;
+          background:url('/local/frame.png?v=7') center/contain no-repeat;
           z-index:2; pointer-events:none;
         }
         .frame-inner {
           position:absolute;
-          top:9%; bottom:9.5%; left:14.5%; right:15%;
+          top:10%; bottom:10%; left:16.5%; right:16%;
           overflow:hidden; background:#000;
           z-index:1;
         }
