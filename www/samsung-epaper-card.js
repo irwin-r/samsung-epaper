@@ -240,6 +240,7 @@ class SamsungEpaperCard extends HTMLElement {
   async _toggleFavourite(assetId) {
     const existing = this._favourites.find(f => f.asset_id === assetId);
     if (existing) {
+      if (!confirm("Remove from favourites?")) return;
       await fetch(this._url(`/api/favourites/${existing.id}`), { method: "DELETE" });
       this._toast("Removed from favourites");
     } else {
