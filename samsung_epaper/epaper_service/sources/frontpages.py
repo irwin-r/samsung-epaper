@@ -12,6 +12,30 @@ from .base import ContentSource
 
 logger = logging.getLogger(__name__)
 
+# Available publications for multi-publication support
+PUBLICATIONS = {
+    "smh": {
+        "name": "Sydney Morning Herald",
+        "url": "https://www.frontpages.com/the-sydney-morning-herald/",
+        "pattern": "the-sydney-herald",
+    },
+    "the_age": {
+        "name": "The Age",
+        "url": "https://www.frontpages.com/the-age/",
+        "pattern": "the-age",
+    },
+    "the_australian": {
+        "name": "The Australian",
+        "url": "https://www.frontpages.com/the-australian/",
+        "pattern": "the-australian",
+    },
+    "courier_mail": {
+        "name": "Courier Mail",
+        "url": "https://www.frontpages.com/courier-mail/",
+        "pattern": "courier-mail",
+    },
+}
+
 
 class FrontpagesSource(ContentSource):
     source_type = "frontpages"

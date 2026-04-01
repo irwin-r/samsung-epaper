@@ -75,3 +75,64 @@ delete_schedule:
       required: true
       selector:
         text:
+
+generate_art:
+  name: Generate Art
+  description: Generate AI art from a camera snapshot or image file and display it
+  fields:
+    camera_entity_id:
+      name: Camera Entity
+      description: Camera entity to take a snapshot from (alternative to image_url)
+      required: false
+      selector:
+        entity:
+          domain: camera
+    image_url:
+      name: Image URL
+      description: URL of source image (alternative to camera entity)
+      required: false
+      selector:
+        text:
+    art_type:
+      name: Art Style
+      description: Art generation style (or "random" for surprise)
+      required: false
+      default: "random"
+      selector:
+        select:
+          options:
+            - random
+            - tabloid
+            - classical
+            - popart
+            - magazine
+            - film_noir
+            - tarot
+            - currency
+            - wanted
+            - art_nouveau
+            - marble_bust
+            - stained_glass
+    variant:
+      name: Variant
+      description: Optional style variant (e.g. "mona_lisa", "time_magazine")
+      required: false
+      selector:
+        text:
+
+generate_frontpage:
+  name: Generate Front Page
+  description: Fetch and display a real newspaper front page
+  fields:
+    publication:
+      name: Publication
+      description: Which newspaper to fetch
+      required: false
+      default: "smh"
+      selector:
+        select:
+          options:
+            - smh
+            - the_age
+            - the_australian
+            - courier_mail

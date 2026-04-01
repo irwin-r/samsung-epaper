@@ -192,6 +192,17 @@ class AssetRepository:
                 return None
             return self._row_to_asset(row)
 
+    async def update_original_filename(self, asset_id: str, filename: str) -> None:
+        await self.db.execute(
+            "UPDATE assets SET filename_original = ? WHERE id = ?",
+            (filename, asset_id),
+        )
+        await self.db.commit()
+
+    async def delete(self, asset_id: str) -> None:
+        await self.db.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+        await self.db.commit()
+
     async def list(self, limit: int = 50, offset: int = 0) -> list[Asset]:
         async with self.db.execute(
             "SELECT * FROM assets ORDER BY created_at DESC LIMIT ? OFFSET ?",

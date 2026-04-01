@@ -3,6 +3,7 @@
 DOMAIN = "samsung_epaper"
 
 CONF_ADDON_URL = "addon_url"
+CONF_AUTH_TOKEN = "auth_token"
 CONF_DISPLAY_NAME = "display_name"
 
 DEFAULT_SCAN_INTERVAL = 30
@@ -13,5 +14,7 @@ SERVICE_DISPLAY_URL = "display_url"
 SERVICE_REFRESH = "refresh"
 SERVICE_CREATE_SCHEDULE = "create_schedule"
 SERVICE_DELETE_SCHEDULE = "delete_schedule"
+SERVICE_GENERATE_ART = "generate_art"
+SERVICE_GENERATE_FRONTPAGE = "generate_frontpage"
 
 PLATFORMS = ["sensor", "binary_sensor", "select", "camera", "button"]

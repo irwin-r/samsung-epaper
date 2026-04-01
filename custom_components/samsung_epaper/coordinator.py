@@ -19,9 +19,10 @@ _LOGGER = logging.getLogger(__name__)
 class SamsungEpaperApiClient:
     """Client for the Samsung ePaper addon API."""
 
-    def __init__(self, session: aiohttp.ClientSession, base_url: str):
+    def __init__(self, session: aiohttp.ClientSession, base_url: str, auth_token: str = ""):
         self.session = session
         self.base_url = base_url.rstrip("/")
+        self.auth_token = auth_token
 
     async def async_get_status(self) -> dict:
         async with self.session.get(f"{self.base_url}/api/status") as resp:
@@ -111,6 +112,57 @@ class SamsungEpaperApiClient:
     async def async_delete_schedule(self, schedule_id: str) -> dict:
         async with self.session.delete(
             f"{self.base_url}/api/schedules/{schedule_id}"
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_generate_art(
+        self,
+        photo_bytes: bytes,
+        art_type: str = "random",
+        variant: str | None = None,
+        filename: str = "photo.jpg",
+    ) -> dict:
+        """Submit an art generation job with a photo."""
+        data = aiohttp.FormData()
+        data.add_field("photo", photo_bytes, filename=filename, content_type="image/jpeg")
+        data.add_field("art_type", art_type)
+        if variant:
+            data.add_field("variant", variant)
+        headers = {}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        async with self.session.post(
+            f"{self.base_url}/api/generate/art", data=data, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_generate_frontpage(self, publication: str = "smh") -> dict:
+        """Fetch a newspaper front page by publication key."""
+        data = aiohttp.FormData()
+        data.add_field("publication", publication)
+        headers = {}
+        if self.auth_token:
+            headers["Authorization"] = f"Bearer {self.auth_token}"
+        async with self.session.post(
+            f"{self.base_url}/api/generate/frontpage", data=data, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_get_generation_types(self) -> dict:
+        """Get available art types and publications."""
+        async with self.session.get(
+            f"{self.base_url}/api/generate/types"
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_get_job_status(self, job_id: str) -> dict:
+        """Poll generation job status."""
+        async with self.session.get(
+            f"{self.base_url}/api/generate/jobs/{job_id}"
         ) as resp:
             resp.raise_for_status()
             return await resp.json()

@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-import shutil
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -41,6 +41,10 @@ from .models import (
     UpdateRequest,
     UpdateResponse,
 )
+from .asset_pipeline import ingest_asset, push_asset_to_display, set_display_lock
+from .generation_api import router as generation_router, set_generation_deps
+from .generation_worker import make_worker
+from .services.jobs import JobQueue
 from .sources import get_source
 
 logger = logging.getLogger(__name__)
@@ -104,7 +108,18 @@ async def lifespan(app: FastAPI):
     app.state.processor = processor
     app.state.assets_dir = assets_dir
     app.state.update_lock = asyncio.Lock()
+    display_lock = asyncio.Lock()
+    app.state.display_lock = display_lock
+    set_display_lock(display_lock)
     app.state.is_updating = False
+
+    # Initialize generation job queue
+    job_queue = JobQueue(db, make_worker(app))
+    await job_queue.init()
+    app.state.job_queue = job_queue
+
+    auth_token = os.environ.get("EPAPER_AUTH_TOKEN")
+    set_generation_deps(app, job_queue, auth_token)
 
     # Restore last state from history
     latest = await history_repo.get_latest()
@@ -129,8 +144,9 @@ async def lifespan(app: FastAPI):
                 next_run_at=next_run.isoformat(),
             )
 
-    # Start background scheduler
+    # Start background scheduler and job queue
     scheduler_task = asyncio.create_task(_run_scheduler(app))
+    job_queue.start()
 
     logger.info(f"Samsung ePaper service v{__version__} started")
     logger.info(f"Display: {config.display_ip}:{config.display_port}")
@@ -138,6 +154,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await job_queue.stop()
     scheduler_task.cancel()
     try:
         await scheduler_task
@@ -202,6 +219,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(content_router)
+    app.include_router(generation_router)
 
     # --- Health & Status ---
 
@@ -315,94 +333,44 @@ def create_app() -> FastAPI:
         Set process=false to skip resize/crop (push raw image as-is).
         """
         assets_dir = app.state.assets_dir
-        processor = app.state.processor
 
-        # Save uploaded file
-        asset_id = str(uuid.uuid4())
+        # Save uploaded file to cache
+        tmp_id = str(uuid.uuid4())
         ext = Path(file.filename).suffix or ".png"
-        original_name = f"{asset_id}_upload{ext}"
-        original_path = assets_dir / "originals" / original_name
+        cache_dir = assets_dir / "cache"
+        cache_dir.mkdir(exist_ok=True)
+        upload_path = cache_dir / f"{tmp_id}_upload{ext}"
 
         content = await file.read()
-        await asyncio.to_thread(original_path.write_bytes, content)
+        await asyncio.to_thread(upload_path.write_bytes, content)
 
-        # Check for duplicate
-        image_hash = await processor.compute_hash(original_path)
-        existing = await app.state.asset_repo.get_by_hash(image_hash)
-        if existing and existing.filename_processed:
-            logger.info(f"Skipping duplicate image (hash: {image_hash})")
-            original_path.unlink(missing_ok=True)
-            success = await push_asset_to_display(app, existing.id)
-            if success:
-                app.state.current_asset_id = existing.id
-                app.state.last_update_status = "success"
-            app.state.last_update = datetime.now()
-            return {
-                "status": "sent" if success else "failed",
-                "asset_id": existing.id,
-                "width": existing.width,
-                "height": existing.height,
-                "duplicate": True,
-            }
-
-        # Create asset record
-        db_asset_id = await app.state.asset_repo.create(
-            source_type="upload",
-            filename_original=original_name,
-            title=title,
-            sha256=image_hash,
-        )
-
-        # Crop if requested
-        input_path = original_path
+        # Crop if requested (modifies the file before ingestion)
         if crop_width > 0 and crop_height > 0:
             from PIL import Image
-            img = await asyncio.to_thread(Image.open, original_path)
+            img = await asyncio.to_thread(Image.open, upload_path)
             cropped = img.crop((crop_x, crop_y, crop_x + crop_width, crop_y + crop_height))
-            cropped_path = assets_dir / "cache" / f"{asset_id}_cropped.png"
+            cropped_path = cache_dir / f"{tmp_id}_cropped.png"
             await asyncio.to_thread(cropped.save, cropped_path, format="PNG")
-            input_path = cropped_path
+            upload_path.unlink(missing_ok=True)
+            upload_path = cropped_path
 
-        # Process for display
-        processed_name = f"{asset_id}_processed.png"
-        processed_path = assets_dir / "processed" / processed_name
-
-        if process:
-            info = await processor.process(input_path, processed_path)
-        else:
-            shutil.copy2(str(input_path), str(processed_path))
-            from PIL import Image
-            img = await asyncio.to_thread(Image.open, processed_path)
-            from .models import ImageInfo
-            info = ImageInfo(width=img.width, height=img.height, file_size=processed_path.stat().st_size)
-
-        # Thumbnail
-        thumb_name = f"{asset_id}_thumb.jpg"
-        thumb_path = assets_dir / "thumbnails" / thumb_name
-        await processor.generate_thumbnail(processed_path, thumb_path)
-
-        # Update asset
-        await app.state.asset_repo.update_processed(
-            asset_id=db_asset_id,
-            filename_processed=processed_name,
-            filename_thumbnail=thumb_name,
-            width=info.width,
-            height=info.height,
-            file_size=info.file_size,
+        # For process=false, we still go through ingest but the processor
+        # handles it.  TODO: support raw pass-through in ingest_asset if needed.
+        result = await ingest_asset(
+            app,
+            upload_path,
+            source_type="upload",
+            title=title,
+            check_duplicate=True,
+            push_to_display=True,
         )
 
-        # Push to display
-        success = await push_asset_to_display(app, db_asset_id)
-        if success:
-            app.state.current_asset_id = db_asset_id
-            app.state.last_update_status = "success"
-        app.state.last_update = datetime.now()
-
         return {
-            "status": "sent" if success else "failed",
-            "asset_id": db_asset_id,
-            "width": info.width,
-            "height": info.height,
+            "status": "sent" if result.pushed else "failed",
+            "asset_id": result.asset_id,
+            "width": result.width,
+            "height": result.height,
+            "duplicate": result.is_duplicate,
         }
 
     @app.post("/api/display_url")
@@ -418,58 +386,27 @@ def create_app() -> FastAPI:
                 image_data = await resp.read()
 
         assets_dir = app.state.assets_dir
-        processor = app.state.processor
-        asset_id = str(uuid.uuid4())
-        original_name = f"{asset_id}_url.png"
-        original_path = assets_dir / "originals" / original_name
-        await asyncio.to_thread(original_path.write_bytes, image_data)
+        cache_dir = assets_dir / "cache"
+        cache_dir.mkdir(exist_ok=True)
+        tmp_id = str(uuid.uuid4())
+        download_path = cache_dir / f"{tmp_id}_url.png"
+        await asyncio.to_thread(download_path.write_bytes, image_data)
 
-        # Check for duplicate
-        image_hash = await processor.compute_hash(original_path)
-        existing = await app.state.asset_repo.get_by_hash(image_hash)
-        if existing and existing.filename_processed:
-            logger.info(f"Skipping duplicate image (hash: {image_hash})")
-            original_path.unlink(missing_ok=True)
-            success = await push_asset_to_display(app, existing.id)
-            if success:
-                app.state.current_asset_id = existing.id
-                app.state.last_update_status = "success"
-            app.state.last_update = datetime.now()
-            return {"status": "sent" if success else "failed", "asset_id": existing.id, "duplicate": True}
-
-        db_asset_id = await app.state.asset_repo.create(
+        result = await ingest_asset(
+            app,
+            download_path,
             source_type="url",
-            filename_original=original_name,
-            source_id=url,
             title=title,
-            sha256=image_hash,
+            source_id=url,
+            check_duplicate=True,
+            push_to_display=True,
         )
 
-        processed_name = f"{asset_id}_processed.png"
-        processed_path = assets_dir / "processed" / processed_name
-        info = await processor.process(original_path, processed_path)
-
-        thumb_name = f"{asset_id}_thumb.jpg"
-        thumb_path = assets_dir / "thumbnails" / thumb_name
-        await processor.generate_thumbnail(processed_path, thumb_path)
-
-        await app.state.asset_repo.update_processed(
-            asset_id=db_asset_id,
-            filename_processed=processed_name,
-            filename_thumbnail=thumb_name,
-            width=info.width,
-            height=info.height,
-            file_size=info.file_size,
-            sha256=image_hash,
-        )
-
-        success = await push_asset_to_display(app, db_asset_id)
-        if success:
-            app.state.current_asset_id = db_asset_id
-            app.state.last_update_status = "success"
-        app.state.last_update = datetime.now()
-
-        return {"status": "sent" if success else "failed", "asset_id": db_asset_id}
+        return {
+            "status": "sent" if result.pushed else "failed",
+            "asset_id": result.asset_id,
+            "duplicate": result.is_duplicate,
+        }
 
     # --- Assets ---
 
@@ -827,13 +764,9 @@ def create_app() -> FastAPI:
 async def perform_update(
     app: FastAPI, preset_id: Optional[str] = None
 ) -> str:
-    """Core update flow: fetch -> process -> store -> push to display."""
+    """Core update flow: fetch from content source -> ingest -> push."""
     async with app.state.update_lock:
-        config: AppConfig = app.state.config
-        asset_repo: AssetRepository = app.state.asset_repo
-        history_repo: HistoryRepository = app.state.history_repo
         preset_repo: PresetRepository = app.state.preset_repo
-        processor: ImageProcessor = app.state.processor
         assets_dir: Path = app.state.assets_dir
 
         try:
@@ -858,77 +791,32 @@ async def perform_update(
             cache_dir.mkdir(exist_ok=True)
             raw_path, metadata = await source.fetch(preset.source_config, cache_dir)
 
-            # 2b. Compute hash and check for duplicate
-            image_hash = await processor.compute_hash(raw_path)
-            existing = await asset_repo.get_by_hash(image_hash)
-            if existing and existing.filename_processed:
-                logger.info(
-                    f"Skipping duplicate image (hash: {image_hash})"
-                )
-                # Clean up the downloaded file
-                raw_path.unlink(missing_ok=True)
-                # Push existing asset to display
-                success = await push_asset_to_display(app, existing.id)
-                if success:
-                    app.state.last_update_status = "success"
-                    app.state.current_asset_id = existing.id
-                    logger.info(f"Reused existing asset: {existing.id}")
-                else:
-                    app.state.last_update_status = "failed"
-                return existing.id
-
-            # 3. Create asset record
-            asset_id = await asset_repo.create(
-                source_type=preset.source_type,
-                filename_original=raw_path.name,
-                source_id=metadata.get("source_id"),
-                title=metadata.get("title"),
-                metadata_json=metadata.get("metadata_json"),
-                sha256=image_hash,
-            )
-
-            # Move original to storage (shutil.move handles cross-filesystem)
-            original_dest = assets_dir / "originals" / f"{asset_id}_{raw_path.name}"
-            shutil.move(str(raw_path), str(original_dest))
-
-            # 4. Process image
+            # 3. Determine processing mode
             process_mode = "color"
             if preset.image_config:
                 process_mode = preset.image_config.get("process_mode", "color")
 
-            processed_name = f"{asset_id}_processed.png"
-            processed_path = assets_dir / "processed" / processed_name
-            info = await processor.process(
-                original_dest, processed_path, mode=process_mode
+            # 4. Ingest through shared pipeline
+            result = await ingest_asset(
+                app,
+                raw_path,
+                source_type=preset.source_type,
+                title=metadata.get("title"),
+                source_id=metadata.get("source_id"),
+                metadata_json=metadata.get("metadata_json"),
+                process_mode=process_mode,
+                check_duplicate=True,
+                push_to_display=True,
             )
 
-            # 5. Generate thumbnail
-            thumb_name = f"{asset_id}_thumb.jpg"
-            thumb_path = assets_dir / "thumbnails" / thumb_name
-            await processor.generate_thumbnail(processed_path, thumb_path)
-
-            # 6. Update asset record
-            await asset_repo.update_processed(
-                asset_id=asset_id,
-                filename_processed=processed_name,
-                filename_thumbnail=thumb_name,
-                width=info.width,
-                height=info.height,
-                file_size=info.file_size,
-            )
-
-            # 7. Push to display
-            success = await push_asset_to_display(app, asset_id)
-
-            if success:
-                app.state.last_update_status = "success"
-                app.state.current_asset_id = asset_id
-                logger.info(f"Update completed successfully (asset: {asset_id})")
+            if result.is_duplicate:
+                logger.info(f"Reused existing asset: {result.asset_id}")
+            elif result.pushed:
+                logger.info(f"Update completed successfully (asset: {result.asset_id})")
             else:
-                app.state.last_update_status = "failed"
-                logger.warning(f"Update completed but display push failed (asset: {asset_id})")
+                logger.warning(f"Update completed but display push failed (asset: {result.asset_id})")
 
-            return asset_id
+            return result.asset_id
 
         except Exception as e:
             app.state.last_update_status = "failed"
@@ -938,38 +826,3 @@ async def perform_update(
             app.state.is_updating = False
             app.state.last_update = datetime.now()
             logger.info("=" * 60)
-
-
-async def push_asset_to_display(app: FastAPI, asset_id: str) -> bool:
-    """Push a processed asset to the Samsung display via MDC. Returns success."""
-    config: AppConfig = app.state.config
-    asset_repo: AssetRepository = app.state.asset_repo
-    history_repo: HistoryRepository = app.state.history_repo
-    mdc: MDCClient = app.state.mdc
-
-    asset = await asset_repo.get(asset_id)
-    if not asset or not asset.filename_processed:
-        raise Exception(f"Asset {asset_id} not found or not processed")
-
-    content_id = str(uuid.uuid4())
-    file_id = str(uuid.uuid4())
-
-    history_id = await history_repo.create(
-        asset_id=asset_id, content_id=content_id, file_id=file_id
-    )
-
-    base_url = config.public_base_url.rstrip("/")
-    manifest_url = f"{base_url}/content/{content_id}/manifest.json"
-
-    logger.info(f"Pushing to display: {manifest_url}")
-    success = await mdc.send_content(manifest_url)
-
-    status = "sent" if success else "failed"
-    await history_repo.update_status(
-        history_id, status, error_message=None if success else "MDC send failed"
-    )
-
-    if success:
-        app.state.current_asset_id = asset_id
-
-    return success

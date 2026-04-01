@@ -33,4 +33,12 @@ class AppConfig(BaseSettings):
         alias="NEWSPAPER_PATTERN",
     )
 
+    # Art generation
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    image_provider: str = Field(default="openai", alias="IMAGE_PROVIDER")
+    image_provider_fallbacks: str = Field(default="", alias="IMAGE_PROVIDER_FALLBACKS")
+    epaper_auth_token: str = Field(default="", alias="EPAPER_AUTH_TOKEN")
+    font_dir: str = Field(default="", alias="FONT_DIR")
+    art_assets_dir: str = Field(default="", alias="ART_ASSETS_DIR")
+
     model_config = {"populate_by_name": True}

@@ -1,0 +1,228 @@
+{
+  "sydney_morning_herald": {
+    "image_path": "assets/templates/sydney_morning_herald.jpg",
+    "arrest_photo_bbox": [
+      190,
+      425,
+      440,
+      440
+    ],
+    "headline_bbox": [
+      40,
+      280,
+      592,
+      140
+    ],
+    "date_bbox": [
+      40,
+      105,
+      88,
+      12
+    ],
+    "body_bbox": [
+      40,
+      450,
+      140,
+      415
+    ],
+    "fonts": {
+      "headline": {
+        "name": "IBMPlexSerif-Bold",
+        "size": 40,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "date": {
+        "name": "Helvetica",
+        "size": 8,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "body": {
+        "name": "IBMPlexSerif-Regular",
+        "size": 9,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      }
+    }
+  },
+  "the_australian": {
+    "image_path": "assets/templates/the_australian.jpeg",
+    "arrest_photo_bbox": [
+      341,
+      462,
+      602,
+      590
+    ],
+    "headline_bbox": [
+      37,
+      311,
+      1205,
+      130
+    ],
+    "date_bbox": [
+      1163,
+      96,
+      90,
+      24
+    ],
+    "body_bbox": [
+      34,
+      462,
+      300,
+      945
+    ],
+    "fonts": {
+      "headline": {
+        "name": "TimesNewRomanPS-BoldMT",
+        "size": 70,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "date": {
+        "name": "TimesNewRomanPSMT",
+        "size": 14,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ],
+        "alignment": "right",
+        "format_type": "multi_line",
+        "line_spacing": -2
+      },
+      "body": {
+        "name": "TimesNewRomanPSMT",
+        "size": 16,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      }
+    }
+  },
+  "courier_mail": {
+    "image_path": "assets/templates/courier_mail.jpeg",
+    "arrest_photo_bbox": [
+      38,
+      364,
+      277,
+      630
+    ],
+    "headline_bbox": [
+      330,
+      370,
+      450,
+      280
+    ],
+    "date_bbox": [
+      38,
+      341,
+      130,
+      18
+    ],
+    "body_bbox": [
+      330,
+      650,
+      450,
+      340
+    ],
+    "fonts": {
+      "headline": {
+        "name": "Impact",
+        "size": 50,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      },
+      "date": {
+        "name": "Helvetica-Bold",
+        "size": 8,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ],
+        "text_transform": "uppercase"
+      },
+      "body": {
+        "name": "TimesNewRomanPSMT",
+        "size": 10,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "background": [
+          255,
+          255,
+          255,
+          255
+        ]
+      }
+    }
+  }
+}
