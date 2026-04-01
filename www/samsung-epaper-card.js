@@ -29,6 +29,7 @@ class SamsungEpaperCard extends HTMLElement {
     this._selectedArtType = "tabloid";
     this._selectedNewspaper = "smh";
     this._generatingJob = null;
+    this._aiFiles = [];
     this._cropImage = null;
     this._cropScale = 1;
     this._cropX = 0;
@@ -132,24 +133,33 @@ class SamsungEpaperCard extends HTMLElement {
   }
 
   async _generateArt() {
-    const fileInput = this.shadowRoot.getElementById("ai-file-input");
-    const file = fileInput?.files?.[0];
-    if (!file) { this._toast("Select a photo first"); return; }
-    this._toast("Generating...");
-    const fd = new FormData();
-    fd.append("photo", file);
-    fd.append("art_type", this._selectedArtType);
-    try {
-      const r = await fetch(this._url("/api/generate/art"), { method: "POST", body: fd, headers: this._authHeaders() });
-      const d = await r.json();
-      if (d.job_id) {
-        this._generatingJob = d.job_id;
-        this._toast("Generating — this may take a minute...");
-        this._pollJob(d.job_id);
-      } else {
-        this._toast(d.detail || "Generation failed");
-      }
-    } catch (e) { this._toast("Error: " + e.message); }
+    if (!this._aiFiles.length) { this._toast("Select photos first"); return; }
+    const count = this._aiFiles.length;
+    this._toast(`Generating ${count} artwork${count > 1 ? "s" : ""}...`);
+    this._generatingJob = true;
+    this._updateDynamic();
+
+    let lastJobId = null;
+    for (const file of this._aiFiles) {
+      const fd = new FormData();
+      fd.append("photo", file);
+      fd.append("art_type", this._selectedArtType);
+      try {
+        const r = await fetch(this._url("/api/generate/art"), { method: "POST", body: fd, headers: this._authHeaders() });
+        const d = await r.json();
+        if (d.job_id) lastJobId = d.job_id;
+        else this._toast(d.detail || `Failed for ${file.name}`);
+      } catch (e) { this._toast("Error: " + e.message); }
+    }
+
+    this._aiFiles = [];
+    if (lastJobId) {
+      this._toast(`${count} job${count > 1 ? "s" : ""} submitted — generating...`);
+      this._pollJob(lastJobId);
+    } else {
+      this._generatingJob = null;
+      this._updateDynamic();
+    }
   }
 
   async _generateNewspaper() {
@@ -821,17 +831,30 @@ class SamsungEpaperCard extends HTMLElement {
             </div>`;
           const types = this._genTypes?.ai_art || [];
           const sel = types.find(t => t.key === this._selectedArtType);
+          const fileCount = this._aiFiles?.length || 0;
           return subTabs + `
             <select class="mode-select" id="ai-type-select">
               ${types.map(t => `<option value="${t.key}" ${t.key === this._selectedArtType ? "selected" : ""}>${t.name}</option>`).join("")}
             </select>
             <div class="mode-desc">${sel?.description || ""}</div>
-            <div class="ai-file-row">
-              <label for="ai-file-input">Choose Photo</label>
-              <input type="file" id="ai-file-input" accept="image/*" style="display:none" />
-              <span class="filename" id="ai-filename">No file selected</span>
+            <div class="upload-area" id="ai-drop-area" style="min-height:100px">
+              <input type="file" id="ai-file-input" accept="image/*" multiple />
+              <div class="drop-icon">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+                </svg>
+              </div>
+              ${fileCount > 0
+                ? `<div style="font-size:13px;font-weight:500">${fileCount} photo${fileCount > 1 ? "s" : ""} selected</div>
+                   <div style="font-size:11px;color:var(--secondary-text-color);margin-top:2px">${this._aiFiles.map(f => f.name).join(", ")}</div>`
+                : `<div style="font-size:13px">Drop photos here or click to browse</div>
+                   <div style="font-size:11px;color:var(--secondary-text-color);margin-top:4px">
+                     Select one or more photos to transform
+                   </div>`}
             </div>
-            <button class="btn" id="btn-generate-art">Generate & Display</button>`;
+            <button class="btn" id="btn-generate-art" style="width:100%;margin-top:10px" ${fileCount === 0 ? "disabled" : ""}>
+              Generate${fileCount > 1 ? ` ${fileCount} Artworks` : ""} & Display
+            </button>`;
         }
 
         if (this._createMode === "newspaper") {
@@ -945,10 +968,23 @@ class SamsungEpaperCard extends HTMLElement {
         this._selectedArtType = e.target.value;
         this._updateDynamic();
       });
-      const aiFileInput = this.shadowRoot.getElementById("ai-file-input");
-      aiFileInput?.addEventListener("change", () => {
-        const fname = this.shadowRoot.getElementById("ai-filename");
-        if (fname) fname.textContent = aiFileInput.files[0]?.name || "No file selected";
+      const aiArea = this.shadowRoot.getElementById("ai-drop-area");
+      const aiFi = this.shadowRoot.getElementById("ai-file-input");
+      aiArea?.addEventListener("click", () => aiFi?.click());
+      aiFi?.addEventListener("change", () => {
+        this._aiFiles = Array.from(aiFi.files || []);
+        this._updateDynamic();
+      });
+      aiArea?.addEventListener("dragover", e => { e.preventDefault(); aiArea.classList.add("drag-over"); });
+      aiArea?.addEventListener("dragleave", () => aiArea.classList.remove("drag-over"));
+      aiArea?.addEventListener("drop", e => {
+        e.preventDefault();
+        aiArea.classList.remove("drag-over");
+        const files = Array.from(e.dataTransfer?.files || []).filter(f => f.type.startsWith("image/"));
+        if (files.length) {
+          this._aiFiles = [...this._aiFiles, ...files];
+          this._updateDynamic();
+        }
       });
       this.shadowRoot.getElementById("btn-generate-art")?.addEventListener("click", () => this._generateArt());
     }
