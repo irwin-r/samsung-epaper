@@ -604,8 +604,14 @@ class SamsungEpaperCard extends HTMLElement {
           padding:28px; text-align:center; cursor:pointer;
           flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
         }
-        .upload-area:hover { border-color:var(--primary-color,#03a9f4); }
+        .upload-area:hover { border-color:var(--primary-color,#03a9f4); background:rgba(3,169,244,0.02); }
+        .upload-area.drag-over {
+          border-color:var(--primary-color,#03a9f4);
+          background:rgba(3,169,244,0.06);
+          transform:scale(1.01);
+        }
         .upload-area input[type=file] { display:none; }
+        .drop-icon { margin-bottom:8px; }
         .spinner {
           width:24px; height:24px; border:3px solid var(--divider-color,#ddd);
           border-top-color:var(--primary-color,#03a9f4); border-radius:50%;
@@ -794,10 +800,14 @@ class SamsungEpaperCard extends HTMLElement {
           return subTabs + `
             <div class="upload-area" id="upload-area">
               <input type="file" id="file-input" accept="image/*" />
-              <div style="font-size:24px;margin-bottom:4px">+</div>
-              <div style="font-size:13px">Select an image</div>
+              <div class="drop-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4">
+                  <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
+                </svg>
+              </div>
+              <div style="font-size:13px">Drop an image here or click to browse</div>
               <div style="font-size:11px;color:var(--secondary-text-color);margin-top:4px">
-                Drag to position, scroll to zoom
+                Then crop &amp; position for the display
               </div>
             </div>`;
         }
@@ -955,6 +965,21 @@ class SamsungEpaperCard extends HTMLElement {
       const fi = this.shadowRoot.getElementById("file-input");
       area?.addEventListener("click", () => fi?.click());
       fi?.addEventListener("change", e => this._onFileSelect(e));
+      // Drag and drop
+      area?.addEventListener("dragover", e => { e.preventDefault(); area.classList.add("drag-over"); });
+      area?.addEventListener("dragleave", () => area.classList.remove("drag-over"));
+      area?.addEventListener("drop", e => {
+        e.preventDefault();
+        area.classList.remove("drag-over");
+        const file = e.dataTransfer?.files?.[0];
+        if (file && file.type.startsWith("image/")) {
+          // Reuse the same handler by setting the file input
+          const dt = new DataTransfer();
+          dt.items.add(file);
+          fi.files = dt.files;
+          fi.dispatchEvent(new Event("change"));
+        }
+      });
       const cv = this.shadowRoot.getElementById("crop-canvas");
       if (cv && this._cropImage) {
         cv.addEventListener("mousedown", e => this._onCropDown(e));
