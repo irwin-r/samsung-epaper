@@ -38,6 +38,17 @@ display_url:
       selector:
         text:
 
+display_favourite:
+  name: Display Favourite
+  description: Display a favourite by name on the ePaper display
+  fields:
+    favourite_name:
+      name: Favourite Name
+      description: The name of the favourite to display (as shown in the Favourites tab)
+      required: true
+      selector:
+        text:
+
 refresh:
   name: Refresh Display
   description: Fetch new content from the active source and update display

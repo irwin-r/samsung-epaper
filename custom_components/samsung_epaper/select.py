@@ -1,5 +1,7 @@
 """Select entities for Samsung ePaper integration."""
 
+import logging
+
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -8,16 +10,22 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 from .entity import SamsungEpaperEntity
 
+_LOGGER = logging.getLogger(__name__)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     data = hass.data[DOMAIN][entry.entry_id]
     coordinator = data["coordinator"]
-    async_add_entities([
+    _LOGGER.warning("samsung_epaper select setup: creating 2 entities (preset + favourite)")
+    _LOGGER.warning("samsung_epaper favourites count: %d", len(coordinator.favourites))
+    entities = [
         SamsungEpaperPresetSelect(coordinator, entry),
         SamsungEpaperFavouriteSelect(coordinator, entry),
-    ])
+    ]
+    _LOGGER.warning("samsung_epaper adding %d select entities", len(entities))
+    async_add_entities(entities)
 
 
 class SamsungEpaperPresetSelect(SamsungEpaperEntity, SelectEntity):

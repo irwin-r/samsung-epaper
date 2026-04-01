@@ -17,6 +17,7 @@ from .const import (
     SERVICE_DELETE_SCHEDULE,
     SERVICE_DISPLAY_ASSET,
     SERVICE_DISPLAY_PRESET,
+    SERVICE_DISPLAY_FAVOURITE,
     SERVICE_DISPLAY_URL,
     SERVICE_GENERATE_ART,
     SERVICE_GENERATE_FRONTPAGE,
@@ -31,6 +32,9 @@ SERVICE_DISPLAY_PRESET_SCHEMA = vol.Schema(
 )
 SERVICE_DISPLAY_ASSET_SCHEMA = vol.Schema(
     {vol.Required("asset_id"): str}
+)
+SERVICE_DISPLAY_FAVOURITE_SCHEMA = vol.Schema(
+    {vol.Required("favourite_name"): str}
 )
 SERVICE_DISPLAY_URL_SCHEMA = vol.Schema(
     {
@@ -129,6 +133,19 @@ def _async_setup_services(hass: HomeAssistant) -> None:
             await client.async_display_url(url, title)
             await coordinator.async_request_refresh()
 
+    async def handle_display_favourite(call: ServiceCall) -> None:
+        favourite_name = call.data["favourite_name"]
+        for entry_data in hass.data.get(DOMAIN, {}).values():
+            client = entry_data["client"]
+            coordinator = entry_data["coordinator"]
+            # Find favourite by name
+            for f in coordinator.favourites:
+                if (f.get("name") or "") == favourite_name:
+                    await client.async_display_favourite(f["id"])
+                    await coordinator.async_request_refresh()
+                    return
+            _LOGGER.warning("Favourite '%s' not found", favourite_name)
+
     async def handle_refresh(call: ServiceCall) -> None:
         for entry_data in hass.data.get(DOMAIN, {}).values():
             client = entry_data["client"]
@@ -165,6 +182,10 @@ def _async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_DISPLAY_URL, handle_display_url,
         schema=SERVICE_DISPLAY_URL_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN, SERVICE_DISPLAY_FAVOURITE, handle_display_favourite,
+        schema=SERVICE_DISPLAY_FAVOURITE_SCHEMA,
     )
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)
     hass.services.async_register(
