@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class TabloidArtGenerator(ArtGenerator):
     """Generates tabloid-style arrest photo art."""
 
-    ART_TYPE_NAME = "tabloid"
+    ART_TYPE_NAME = "Tabloid Front Page"
     ART_TYPE_DESCRIPTION = "Creates humorous tabloid front pages featuring AI-generated arrest photos and stories"
 
     def __init__(self, config: Optional[ArtGeneratorConfig] = None):
