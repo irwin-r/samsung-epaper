@@ -836,7 +836,6 @@ class SamsungEpaperCard extends HTMLElement {
             <select class="mode-select" id="ai-type-select">
               ${types.map(t => `<option value="${t.key}" ${t.key === this._selectedArtType ? "selected" : ""}>${t.name}</option>`).join("")}
             </select>
-            <div class="mode-desc">${sel?.description || ""}</div>
             <div class="upload-area" id="ai-drop-area" style="min-height:100px">
               <input type="file" id="ai-file-input" accept="image/*" multiple />
               <div class="drop-icon">
