@@ -41,6 +41,7 @@ class SamsungEpaperCard extends HTMLElement {
     this._favourites = [];
     this._collections = [];
     this._schedules = [];
+    this._currentCollectionId = null; // null = "All" / root
     this._currentName = null;
     this._currentAssetId = null;
     this._lastDisplayedAt = null;
@@ -250,6 +251,63 @@ class SamsungEpaperCard extends HTMLElement {
       });
       this._toast("Added to favourites");
     }
+    await this._loadFavourites();
+  }
+
+  async _createCollection() {
+    const name = prompt("Folder name:");
+    if (!name) return;
+    await fetch(this._url("/api/collections"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, parent_id: this._currentCollectionId }),
+    });
+    this._toast("Folder created");
+    await this._loadFavourites();
+  }
+
+  async _deleteCollection(id) {
+    if (!confirm("Delete this folder? Favourites inside will be moved to All.")) return;
+    // Move favourites out first
+    const favsInFolder = this._favourites.filter(f => f.collection_id === id);
+    for (const f of favsInFolder) {
+      await fetch(this._url(`/api/favourites/${f.id}`), { method: "DELETE" });
+      await fetch(this._url("/api/favourites"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ asset_id: f.asset_id, name: f.name }),
+      });
+    }
+    await fetch(this._url(`/api/collections/${id}`), { method: "DELETE" });
+    this._currentCollectionId = null;
+    this._toast("Folder deleted");
+    await this._loadFavourites();
+  }
+
+  async _renameCollection(id) {
+    const col = this._collections.find(c => c.id === id);
+    const name = prompt("Rename folder:", col?.name || "");
+    if (!name) return;
+    await fetch(this._url(`/api/collections/${id}?name=${encodeURIComponent(name)}`), { method: "PUT" });
+    await this._loadFavourites();
+  }
+
+  async _moveFavToCollection(favId) {
+    const options = [{ id: null, name: "All (no folder)" }, ...this._collections];
+    const names = options.map((c, i) => `${i}: ${c.name}`).join("\n");
+    const choice = prompt(`Move to folder:\n${names}\n\nEnter number:`);
+    if (choice === null) return;
+    const idx = parseInt(choice);
+    if (isNaN(idx) || idx < 0 || idx >= options.length) return;
+    const targetId = options[idx].id;
+
+    // Remove and re-add with new collection_id
+    const fav = this._favourites.find(f => f.id === favId);
+    if (!fav) return;
+    await fetch(this._url(`/api/favourites/${favId}`), { method: "DELETE" });
+    await fetch(this._url("/api/favourites"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ asset_id: fav.asset_id, collection_id: targetId, name: fav.name }),
+    });
+    this._toast("Moved");
     await this._loadFavourites();
   }
 
@@ -649,6 +707,22 @@ class SamsungEpaperCard extends HTMLElement {
           overflow:hidden; text-overflow:ellipsis;
         }
         .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; flex:1; display:flex; align-items:center; justify-content:center; }
+        .folder-bar {
+          display:flex; align-items:center; gap:6px; margin-bottom:10px; padding-bottom:8px;
+          border-bottom:1px solid var(--divider-color,#e8e8e8); flex-wrap:wrap;
+        }
+        .folder-chip {
+          padding:4px 10px; border-radius:14px; border:1px solid var(--divider-color,#ddd);
+          font-size:11px; cursor:pointer; background:transparent;
+          color:var(--secondary-text-color); font-family:inherit;
+          transition:all .15s; display:flex; align-items:center; gap:4px;
+        }
+        .folder-chip:hover { border-color:var(--primary-color,#03a9f4); }
+        .folder-chip.active { background:var(--primary-color,#03a9f4); color:#fff; border-color:var(--primary-color,#03a9f4); }
+        .folder-chip svg { opacity:0.5; }
+        .folder-chip.active svg { opacity:1; }
+        .folder-chip.add { border-style:dashed; }
+        .folder-chip.add:hover { background:rgba(3,169,244,0.06); }
         .sub-tabs {
           display:flex; gap:0; margin-bottom:14px;
           border:1px solid var(--divider-color,#e0e0e0);
@@ -893,8 +967,33 @@ class SamsungEpaperCard extends HTMLElement {
           }).join("")}</div>`;
 
       case "favourites":
-        if (!this._favourites.length) return `<div class="empty">No favourites yet. Click the heart on any image in History.</div>`;
-        return `<div class="gallery">${this._favourites
+        const folderSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
+        const folderBar = `<div class="folder-bar">
+          <button class="folder-chip ${this._currentCollectionId === null ? "active" : ""}" data-folder-id="all">All</button>
+          ${this._collections.map(c => `
+            <button class="folder-chip ${this._currentCollectionId === c.id ? "active" : ""}" data-folder-id="${c.id}">
+              ${folderSvg} ${c.name}
+            </button>
+          `).join("")}
+          <button class="folder-chip add" id="btn-add-folder" title="New folder">+ Folder</button>
+          ${this._currentCollectionId ? `
+            <button class="folder-chip" id="btn-rename-folder" title="Rename folder">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button class="folder-chip" id="btn-del-folder" title="Delete folder" style="border-color:#e53935;color:#e53935">
+              &times;
+            </button>
+          ` : ""}
+        </div>`;
+
+        const filtered = this._currentCollectionId
+          ? this._favourites.filter(f => f.collection_id === this._currentCollectionId)
+          : this._favourites;
+
+        if (!this._favourites.length) return folderBar + `<div class="empty">No favourites yet. Click the heart on any image in History.</div>`;
+        if (!filtered.length) return folderBar + `<div class="empty">This folder is empty</div>`;
+
+        return folderBar + `<div class="gallery">${filtered
           .map(f => {
             const asset = this._assetMap?.[f.asset_id];
             const label = f.name || asset?.title || asset?.filename_original || "Untitled";
@@ -902,6 +1001,9 @@ class SamsungEpaperCard extends HTMLElement {
               <img src="${this._url(`/api/assets/${f.asset_id}/thumbnail`)}" loading="lazy" />
               <div class="lbl">${label}</div>
               <div class="item-actions">
+                <button class="overlay-btn" data-move-fav="${f.id}" title="Move to folder">
+                  ${folderSvg}
+                </button>
                 <button class="overlay-btn" data-rename-fav="${f.id}" title="Rename">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                 </button>
@@ -1060,6 +1162,23 @@ class SamsungEpaperCard extends HTMLElement {
         b.addEventListener("click", (e) => {
           e.stopPropagation();
           this._toggleFavourite(b.dataset.favAsset);
+        })
+      );
+      // Folder navigation
+      this.shadowRoot.querySelectorAll("[data-folder-id]").forEach(b =>
+        b.addEventListener("click", () => {
+          this._currentCollectionId = b.dataset.folderId === "all" ? null : b.dataset.folderId;
+          this._updateDynamic();
+        })
+      );
+      this.shadowRoot.getElementById("btn-add-folder")?.addEventListener("click", () => this._createCollection());
+      this.shadowRoot.getElementById("btn-rename-folder")?.addEventListener("click", () => this._renameCollection(this._currentCollectionId));
+      this.shadowRoot.getElementById("btn-del-folder")?.addEventListener("click", () => this._deleteCollection(this._currentCollectionId));
+
+      this.shadowRoot.querySelectorAll("[data-move-fav]").forEach(b =>
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this._moveFavToCollection(b.dataset.moveFav);
         })
       );
       this.shadowRoot.querySelectorAll("[data-del-asset]").forEach(b =>
