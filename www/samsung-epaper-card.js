@@ -43,13 +43,6 @@ class SamsungEpaperCard extends HTMLElement {
     this._currentName = null;
     this._currentAssetId = null;
     this._lastDisplayedAt = null;
-    // Generate tab state
-    this._generateTypes = null;
-    this._selectedGenType = null;
-    this._selectedGenCategory = "ai_art";
-    this._generateJobId = null;
-    this._generateJobStatus = null;
-    this._pollGeneration = 0; // incremented to cancel stale polls
   }
 
   setConfig(config) {
@@ -607,18 +600,6 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .upload-area:hover { border-color:var(--primary-color,#03a9f4); }
         .upload-area input[type=file] { display:none; }
-        .gen-grid {
-          display:flex; flex-wrap:wrap; gap:4px; margin-bottom:4px;
-        }
-        .gen-tile {
-          padding:5px 10px; border-radius:6px; border:1px solid var(--divider-color,#ddd);
-          background:var(--card-background-color,#fff); cursor:pointer; font-size:11px;
-          transition:all 0.15s;
-        }
-        .gen-tile:hover { border-color:var(--primary-color,#03a9f4); }
-        .gen-tile.active { background:var(--primary-color,#03a9f4); color:#fff; border-color:var(--primary-color,#03a9f4); }
-        .gen-tile.fp { background:var(--secondary-background-color,#f5f5f5); }
-        .gen-tile.fp:hover { background:var(--primary-color,#03a9f4); color:#fff; }
         .spinner {
           width:24px; height:24px; border:3px solid var(--divider-color,#ddd);
           border-top-color:var(--primary-color,#03a9f4); border-radius:50%;
@@ -751,7 +732,6 @@ class SamsungEpaperCard extends HTMLElement {
               <button class="tab ${this._activeTab === "history" ? "active" : ""}" data-tab="history">History</button>
               <button class="tab ${this._activeTab === "favourites" ? "active" : ""}" data-tab="favourites">Favourites</button>
               <button class="tab ${this._activeTab === "schedules" ? "active" : ""}" data-tab="schedules">Schedules</button>
-              <button class="tab ${this._activeTab === "generate" ? "active" : ""}" data-tab="generate">Generate</button>
             </div>
             <div class="tab-body" id="tab-body">${this._renderTab()}</div>
           </div>
@@ -869,61 +849,6 @@ class SamsungEpaperCard extends HTMLElement {
               </div>
             </div>`;
           }).join("")}</div>`;
-
-      case "generate":
-        if (!this._generateTypes) return `<div class="empty">Loading styles...</div>`;
-        const aiTypes = this._generateTypes.ai_art || [];
-        const fpTypes = this._generateTypes.frontpage || [];
-        const sel = this._selectedGenType;
-        const selInfo = sel ? aiTypes.find(t => t.key === sel) : null;
-
-        if (this._generateJobId && this._generateJobStatus) {
-          const js = this._generateJobStatus;
-          const isDone = js.status === "completed" || js.status === "failed";
-          return `
-            <div style="text-align:center;padding:20px 0">
-              ${!isDone ? '<div class="spinner" style="margin:0 auto 12px"></div>' : ''}
-              <div style="font-size:14px;font-weight:500;margin-bottom:4px">${
-                js.status === "completed" ? "Art generated!" :
-                js.status === "failed" ? "Generation failed" :
-                this.escapeHtml(js.progress) || "Generating..."
-              }</div>
-              <div style="font-size:12px;color:var(--secondary-text-color)">${this.escapeHtml(js.art_type)}</div>
-              ${js.error ? `<div style="font-size:11px;color:#e53935;margin-top:8px">${this.escapeHtml(js.error)}</div>` : ""}
-              ${isDone ? `<button class="btn sm" style="margin-top:12px" id="btn-gen-back">Back</button>` : ""}
-            </div>`;
-        }
-
-        return `
-          <div style="margin-bottom:8px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;color:var(--secondary-text-color)">AI Art Styles</div>
-            <div class="gen-grid">
-              ${aiTypes.map(t => `<button class="gen-tile ${sel === t.key ? "active" : ""}" data-gen-type="${this.escapeHtml(t.key)}">${this.escapeHtml(t.name)}</button>`).join("")}
-              <button class="gen-tile ${sel === "random" ? "active" : ""}" data-gen-type="random">Random</button>
-            </div>
-          </div>
-          <div style="margin-bottom:8px">
-            <div style="font-size:12px;font-weight:600;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.5px;color:var(--secondary-text-color)">Front Pages</div>
-            <div class="gen-grid">
-              ${fpTypes.map(t => `<button class="gen-tile fp" data-gen-fp="${this.escapeHtml(t.key)}">${this.escapeHtml(t.name)}</button>`).join("")}
-            </div>
-          </div>
-          ${sel || sel === "random" ? `
-            <div style="border-top:1px solid var(--divider-color,#e0e0e0);padding-top:10px;margin-top:4px">
-              <div style="font-size:13px;font-weight:500;margin-bottom:6px">
-                ${sel === "random" ? "Random Style" : this.escapeHtml(selInfo?.name || sel)}
-              </div>
-              ${selInfo?.variants?.length ? `
-                <select id="gen-variant" style="width:100%;padding:6px;margin-bottom:8px;border-radius:4px;border:1px solid var(--divider-color,#ccc)">
-                  <option value="">Default</option>
-                  ${selInfo.variants.map(v => `<option value="${v.key || v}">${v.name || v}</option>`).join("")}
-                </select>` : ""}
-              <div class="upload-area" id="gen-upload-area" style="min-height:60px;padding:12px">
-                <input type="file" id="gen-file-input" accept="image/*" />
-                <div style="font-size:13px">Select a photo</div>
-              </div>
-              <button class="btn" id="btn-generate" style="width:100%;margin-top:8px" disabled>Generate & Display</button>
-            </div>` : ""}`;
 
       case "schedules":
         const items = this._schedules.map(s => `
@@ -1067,120 +992,6 @@ class SamsungEpaperCard extends HTMLElement {
         b.addEventListener("click", () => this._deleteSchedule(b.dataset.delSchedule))
       );
     }
-    if (this._activeTab === "generate") {
-      this.shadowRoot.querySelectorAll("[data-gen-type]").forEach(b =>
-        b.addEventListener("click", () => {
-          this._selectedGenType = b.dataset.genType;
-          this._updateDynamic();
-        })
-      );
-      this.shadowRoot.querySelectorAll("[data-gen-fp]").forEach(b =>
-        b.addEventListener("click", () => this._generateFrontpage(b.dataset.genFp))
-      );
-      const genArea = this.shadowRoot.getElementById("gen-upload-area");
-      const genFi = this.shadowRoot.getElementById("gen-file-input");
-      genArea?.addEventListener("click", () => genFi?.click());
-      genFi?.addEventListener("change", e => {
-        if (e.target.files?.[0]) {
-          this._genFile = e.target.files[0];
-          this.shadowRoot.getElementById("btn-generate").disabled = false;
-          genArea.querySelector("div").textContent = this._genFile.name;
-        }
-      });
-      this.shadowRoot.getElementById("btn-generate")?.addEventListener("click", () => this._submitArtGeneration());
-      this.shadowRoot.getElementById("btn-gen-back")?.addEventListener("click", () => {
-        this._pollGeneration++; // cancel any in-flight polling
-        this._generateJobId = null;
-        this._generateJobStatus = null;
-        this._updateDynamic();
-      });
-    }
-  }
-
-  async _loadGenerateTypes() {
-    if (this._generateTypes) return;
-    try {
-      const r = await fetch(this._url("/api/generate/types"));
-      if (r.ok) this._generateTypes = await r.json();
-      this._updateDynamic();
-    } catch (e) { console.error("Load generate types:", e); }
-  }
-
-  async _submitArtGeneration() {
-    if (!this._genFile) return;
-    const form = new FormData();
-    form.append("photo", this._genFile);
-    form.append("art_type", this._selectedGenType || "random");
-    const variant = this.shadowRoot.getElementById("gen-variant")?.value;
-    if (variant) form.append("variant", variant);
-    try {
-      const headers = {};
-      if (this._config.auth_token) headers["Authorization"] = `Bearer ${this._config.auth_token}`;
-      const r = await fetch(this._url("/api/generate/art"), { method: "POST", body: form, headers });
-      if (!r.ok) { this._toast("Generation failed", true); return; }
-      const data = await r.json();
-      this._generateJobId = data.job_id;
-      this._generateJobStatus = data;
-      this._genFile = null;
-      this._updateDynamic();
-      this._pollJob(data.job_id);
-    } catch (e) { this._toast("Generation error: " + e.message, true); }
-  }
-
-  async _generateFrontpage(publication) {
-    try {
-      this._toast("Fetching front page...");
-      const form = new FormData();
-      form.append("publication", publication);
-      const headers = {};
-      if (this._config.auth_token) headers["Authorization"] = `Bearer ${this._config.auth_token}`;
-      const r = await fetch(this._url("/api/generate/frontpage"), { method: "POST", body: form, headers });
-      if (r.ok) {
-        const data = await r.json();
-        this._toast(data.displayed ? "Displayed!" : "Fetched (not pushed)");
-        this._loadHistory();
-        this._loadCurrentAsset();
-      } else { this._toast("Failed to fetch front page", true); }
-    } catch (e) { this._toast("Error: " + e.message, true); }
-  }
-
-  async _pollJob(jobId) {
-    const gen = ++this._pollGeneration;
-    const poll = async () => {
-      if (gen !== this._pollGeneration) return; // cancelled
-      try {
-        const r = await fetch(this._url(`/api/generate/jobs/${jobId}`));
-        if (!r.ok || gen !== this._pollGeneration) return;
-        const data = await r.json();
-        if (gen !== this._pollGeneration) return; // cancelled during fetch
-        this._generateJobStatus = data;
-        this._updateDynamic();
-        if (data.status === "completed") {
-          this._toast("Art displayed!");
-          this._loadHistory();
-          this._loadCurrentAsset();
-        } else if (data.status === "failed") {
-          // done, stop polling
-        } else {
-          setTimeout(poll, 2000);
-        }
-      } catch (e) { /* stop polling on error */ }
-    };
-    setTimeout(poll, 1000);
-  }
-
-  escapeHtml(str) {
-    if (!str) return "";
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  }
-
-  disconnectedCallback() {
-    this._pollGeneration++;
   }
 
   getCardSize() { return 8; }
