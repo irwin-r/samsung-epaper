@@ -72,6 +72,18 @@ class SamsungEpaperApiClient:
             resp.raise_for_status()
             return await resp.read()
 
+    async def async_get_favourites(self) -> list[dict]:
+        async with self.session.get(f"{self.base_url}/api/favourites") as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
+    async def async_display_favourite(self, favourite_id: str) -> dict:
+        async with self.session.post(
+            f"{self.base_url}/api/favourites/{favourite_id}/display"
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.json()
+
     async def async_display_url(self, url: str, title: str = "URL Image") -> dict:
         async with self.session.post(
             f"{self.base_url}/api/display_url",
@@ -189,12 +201,14 @@ class SamsungEpaperCoordinator(DataUpdateCoordinator):
         self.client = client
         self.presets: list[dict] = []
         self.schedules: list[dict] = []
+        self.favourites: list[dict] = []
 
     async def _async_update_data(self) -> dict:
         try:
             status = await self.client.async_get_status()
             self.presets = await self.client.async_get_presets()
             self.schedules = await self.client.async_get_schedules()
+            self.favourites = await self.client.async_get_favourites()
             return status
         except aiohttp.ClientError as err:
             raise UpdateFailed(f"Error communicating with addon: {err}") from err
