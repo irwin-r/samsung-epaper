@@ -328,11 +328,11 @@ class SamsungEpaperCard extends HTMLElement {
     this._currentAssetId = null;
     await this._svc("refresh");
   }
-  async _displayAsset(id) {
+  async _displayAsset(id, displayName) {
     this._toast("Sending...");
     const asset = this._assets?.find(a => a.id === id) || this._assetMap?.[id];
     this._currentAssetId = id;
-    this._currentName = asset?.title || asset?.filename_original || "Image";
+    this._currentName = displayName || asset?.title || asset?.filename_original || "Image";
     this._lastDisplayedAt = new Date().toISOString();
     this._updateStatusBar();
     // Update preview immediately from addon thumbnail
@@ -1047,7 +1047,13 @@ class SamsungEpaperCard extends HTMLElement {
       this.shadowRoot.querySelectorAll(".gallery-item").forEach(i =>
         i.addEventListener("click", (e) => {
           if (e.target.closest(".overlay-btn")) return;
-          this._displayAsset(i.dataset.id);
+          // Use favourite name if on favourites tab
+          let name = null;
+          if (this._activeTab === "favourites") {
+            const fav = this._favourites.find(f => f.asset_id === i.dataset.id);
+            if (fav?.name) name = fav.name;
+          }
+          this._displayAsset(i.dataset.id, name);
         })
       );
       this.shadowRoot.querySelectorAll(".fav-btn").forEach(b =>
