@@ -707,22 +707,52 @@ class SamsungEpaperCard extends HTMLElement {
           overflow:hidden; text-overflow:ellipsis;
         }
         .empty { text-align:center; padding:20px; color:var(--secondary-text-color); font-size:12px; flex:1; display:flex; align-items:center; justify-content:center; }
-        .folder-bar {
-          display:flex; align-items:center; gap:6px; margin-bottom:10px; padding-bottom:8px;
-          border-bottom:1px solid var(--divider-color,#e8e8e8); flex-wrap:wrap;
+        .fav-layout { display:flex; gap:12px; flex:1; min-height:0; }
+        .folder-sidebar {
+          width:140px; flex-shrink:0; display:flex; flex-direction:column; gap:4px;
+          overflow-y:auto;
         }
-        .folder-chip {
-          padding:4px 10px; border-radius:14px; border:1px solid var(--divider-color,#ddd);
-          font-size:11px; cursor:pointer; background:transparent;
+        .folder-item {
+          display:flex; align-items:center; gap:6px; padding:8px 10px;
+          border-radius:8px; cursor:pointer; font-size:12px;
+          background:transparent; border:none; font-family:inherit;
+          color:var(--primary-text-color); transition:all .15s;
+          text-align:left; position:relative;
+        }
+        .folder-item:hover { background:var(--secondary-background-color,#f5f5f5); }
+        .folder-item.active {
+          background:var(--primary-color,#03a9f4); color:#fff;
+        }
+        .folder-item .folder-icon { flex-shrink:0; opacity:0.5; }
+        .folder-item.active .folder-icon { opacity:1; }
+        .folder-item .folder-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .folder-item .folder-count {
+          font-size:10px; opacity:0.5; background:rgba(0,0,0,0.06);
+          padding:1px 5px; border-radius:8px; flex-shrink:0;
+        }
+        .folder-item.active .folder-count { background:rgba(255,255,255,0.2); opacity:1; }
+        .folder-item .folder-actions {
+          position:absolute; right:4px; top:50%; transform:translateY(-50%);
+          display:none; gap:2px;
+        }
+        .folder-item:hover .folder-actions { display:flex; }
+        .folder-item.active .folder-actions { display:flex; }
+        .folder-action-btn {
+          width:18px; height:18px; border:none; border-radius:4px; cursor:pointer;
+          display:flex; align-items:center; justify-content:center;
+          background:rgba(0,0,0,0.1); color:inherit; font-size:10px; padding:0;
+        }
+        .folder-action-btn:hover { background:rgba(0,0,0,0.2); }
+        .folder-add {
+          display:flex; align-items:center; gap:6px; padding:8px 10px;
+          border-radius:8px; cursor:pointer; font-size:11px;
+          border:1px dashed var(--divider-color,#ddd); background:transparent;
           color:var(--secondary-text-color); font-family:inherit;
-          transition:all .15s; display:flex; align-items:center; gap:4px;
+          transition:all .15s; margin-top:4px;
         }
-        .folder-chip:hover { border-color:var(--primary-color,#03a9f4); }
-        .folder-chip.active { background:var(--primary-color,#03a9f4); color:#fff; border-color:var(--primary-color,#03a9f4); }
-        .folder-chip svg { opacity:0.5; }
-        .folder-chip.active svg { opacity:1; }
-        .folder-chip.add { border-style:dashed; }
-        .folder-chip.add:hover { background:rgba(3,169,244,0.06); }
+        .folder-add:hover { border-color:var(--primary-color,#03a9f4); background:rgba(3,169,244,0.04); }
+        .folder-divider { height:1px; background:var(--divider-color,#e8e8e8); margin:4px 0; }
+        .fav-gallery-area { flex:1; min-width:0; overflow-y:auto; }
         .sub-tabs {
           display:flex; gap:0; margin-bottom:14px;
           border:1px solid var(--divider-color,#e0e0e0);
@@ -967,50 +997,79 @@ class SamsungEpaperCard extends HTMLElement {
           }).join("")}</div>`;
 
       case "favourites":
-        const folderSvg = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
-        const folderBar = `<div class="folder-bar">
-          <button class="folder-chip ${this._currentCollectionId === null ? "active" : ""}" data-folder-id="all">All</button>
-          ${this._collections.map(c => `
-            <button class="folder-chip ${this._currentCollectionId === c.id ? "active" : ""}" data-folder-id="${c.id}">
-              ${folderSvg} ${c.name}
-            </button>
-          `).join("")}
-          <button class="folder-chip add" id="btn-add-folder" title="New folder">+ Folder</button>
-          ${this._currentCollectionId ? `
-            <button class="folder-chip" id="btn-rename-folder" title="Rename folder">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-            <button class="folder-chip" id="btn-del-folder" title="Delete folder" style="border-color:#e53935;color:#e53935">
-              &times;
-            </button>
-          ` : ""}
+        const fSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
+        const fSvgSm = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>';
+        const pencilSvg = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+
+        // Count favourites per folder
+        const favCounts = {};
+        let totalFavs = 0;
+        for (const f of this._favourites) {
+          totalFavs++;
+          const cid = f.collection_id || "__all__";
+          favCounts[cid] = (favCounts[cid] || 0) + 1;
+        }
+
+        const sidebar = `<div class="folder-sidebar">
+          <button class="folder-item ${this._currentCollectionId === null ? "active" : ""}" data-folder-id="all">
+            <span class="folder-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            </span>
+            <span class="folder-name">All</span>
+            <span class="folder-count">${totalFavs}</span>
+          </button>
+          <div class="folder-divider"></div>
+          ${this._collections.map(c => {
+            const count = favCounts[c.id] || 0;
+            const isActive = this._currentCollectionId === c.id;
+            return `<button class="folder-item ${isActive ? "active" : ""}" data-folder-id="${c.id}">
+              <span class="folder-icon">${fSvg}</span>
+              <span class="folder-name">${c.name}</span>
+              <span class="folder-count">${count}</span>
+              <span class="folder-actions">
+                <button class="folder-action-btn" data-rename-col="${c.id}" title="Rename">${pencilSvg}</button>
+                <button class="folder-action-btn" data-del-col="${c.id}" title="Delete">&times;</button>
+              </span>
+            </button>`;
+          }).join("")}
+          <button class="folder-add" id="btn-add-folder">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Folder
+          </button>
         </div>`;
 
         const filtered = this._currentCollectionId
           ? this._favourites.filter(f => f.collection_id === this._currentCollectionId)
           : this._favourites;
 
-        if (!this._favourites.length) return folderBar + `<div class="empty">No favourites yet. Click the heart on any image in History.</div>`;
-        if (!filtered.length) return folderBar + `<div class="empty">This folder is empty</div>`;
+        const activeFolder = this._collections.find(c => c.id === this._currentCollectionId);
+        const galleryTitle = activeFolder ? activeFolder.name : "All Favourites";
 
-        return folderBar + `<div class="gallery">${filtered
-          .map(f => {
+        let galleryContent;
+        if (!this._favourites.length) {
+          galleryContent = `<div class="empty">No favourites yet.<br/>Click the heart on any image in History.</div>`;
+        } else if (!filtered.length) {
+          galleryContent = `<div class="empty">This folder is empty.<br/>Drag images here or use the move button.</div>`;
+        } else {
+          galleryContent = `<div class="gallery">${filtered.map(f => {
             const asset = this._assetMap?.[f.asset_id];
             const label = f.name || asset?.title || asset?.filename_original || "Untitled";
             return `<div class="gallery-item" data-id="${f.asset_id}">
               <img src="${this._url(`/api/assets/${f.asset_id}/thumbnail`)}" loading="lazy" />
               <div class="lbl">${label}</div>
               <div class="item-actions">
-                <button class="overlay-btn" data-move-fav="${f.id}" title="Move to folder">
-                  ${folderSvg}
-                </button>
-                <button class="overlay-btn" data-rename-fav="${f.id}" title="Rename">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
+                <button class="overlay-btn" data-move-fav="${f.id}" title="Move to folder">${fSvgSm}</button>
+                <button class="overlay-btn" data-rename-fav="${f.id}" title="Rename">${pencilSvg}</button>
                 <button class="overlay-btn fav-btn active" data-fav-asset="${f.asset_id}" title="Unfavourite">&#9829;</button>
               </div>
             </div>`;
           }).join("")}</div>`;
+        }
+
+        return `<div class="fav-layout">
+          ${sidebar}
+          <div class="fav-gallery-area">${galleryContent}</div>
+        </div>`;
 
       case "schedules":
         const items = this._schedules.map(s => `
@@ -1166,14 +1225,19 @@ class SamsungEpaperCard extends HTMLElement {
       );
       // Folder navigation
       this.shadowRoot.querySelectorAll("[data-folder-id]").forEach(b =>
-        b.addEventListener("click", () => {
+        b.addEventListener("click", (e) => {
+          if (e.target.closest(".folder-action-btn")) return;
           this._currentCollectionId = b.dataset.folderId === "all" ? null : b.dataset.folderId;
           this._updateDynamic();
         })
       );
       this.shadowRoot.getElementById("btn-add-folder")?.addEventListener("click", () => this._createCollection());
-      this.shadowRoot.getElementById("btn-rename-folder")?.addEventListener("click", () => this._renameCollection(this._currentCollectionId));
-      this.shadowRoot.getElementById("btn-del-folder")?.addEventListener("click", () => this._deleteCollection(this._currentCollectionId));
+      this.shadowRoot.querySelectorAll("[data-rename-col]").forEach(b =>
+        b.addEventListener("click", (e) => { e.stopPropagation(); this._renameCollection(b.dataset.renameCol); })
+      );
+      this.shadowRoot.querySelectorAll("[data-del-col]").forEach(b =>
+        b.addEventListener("click", (e) => { e.stopPropagation(); this._deleteCollection(b.dataset.delCol); })
+      );
 
       this.shadowRoot.querySelectorAll("[data-move-fav]").forEach(b =>
         b.addEventListener("click", (e) => {
