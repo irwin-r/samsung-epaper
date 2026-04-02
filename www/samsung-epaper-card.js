@@ -456,11 +456,12 @@ class SamsungEpaperCard extends HTMLElement {
 
   _drawCrop() {
     const c = this.shadowRoot.getElementById("crop-canvas");
-    if (!c || !this._cropImage) return;
+    const area = this.shadowRoot.getElementById("crop-area");
+    if (!c || !area || !this._cropImage) return;
     const ctx = c.getContext("2d");
     const dw = this._config.display_width, dh = this._config.display_height;
-    const ch = c.parentElement?.clientHeight || 350;
-    const cw = ch * (dw / dh);
+    const cw = area.clientWidth;
+    const ch = area.clientHeight;
     c.width = cw; c.height = ch;
     ctx.fillStyle = "#111"; ctx.fillRect(0, 0, cw, ch);
     const img = this._cropImage, s = this._cropScale, ds = ch / dh;
@@ -715,10 +716,30 @@ class SamsungEpaperCard extends HTMLElement {
           animation:spin 0.8s linear infinite;
         }
         @keyframes spin { to { transform:rotate(360deg); } }
-        .crop-wrap { height:320px; display:flex; align-items:center; justify-content:center; background:#111; border-radius:8px; overflow:hidden; }
-        #crop-canvas { cursor:grab; display:block; height:100%; }
-        #crop-canvas:active { cursor:grabbing; }
-        .crop-bar { display:flex; justify-content:center; gap:6px; margin-top:6px; align-items:center; font-size:11px; }
+        .crop-frame-wrap {
+          position:relative; margin:0 auto;
+          width:200px; aspect-ratio:437/679;
+        }
+        .crop-frame-overlay {
+          position:absolute; top:0; left:0; width:100%; height:100%;
+          background:url('/local/epaper-frame.png') center/contain no-repeat;
+          z-index:2; pointer-events:none;
+        }
+        .crop-canvas-area {
+          position:absolute;
+          top:10%; bottom:10%; left:16.5%; right:16%;
+          overflow:hidden; background:#111; z-index:1; cursor:grab;
+        }
+        .crop-canvas-area:active { cursor:grabbing; }
+        #crop-canvas { display:block; }
+        .crop-bar {
+          display:flex; justify-content:center; gap:6px; margin-top:8px;
+          align-items:center; font-size:11px;
+        }
+        .crop-hint {
+          text-align:center; font-size:10px; color:var(--secondary-text-color);
+          margin-top:4px; opacity:0.6;
+        }
         .gallery {
           display:grid; grid-template-columns:repeat(auto-fill,minmax(65px,1fr));
           gap:6px; align-content:start; flex:1;
@@ -948,10 +969,16 @@ class SamsungEpaperCard extends HTMLElement {
 
         if (this._createMode === "upload") {
           if (this._cropImage) return subTabs + `
-            <div class="crop-wrap"><canvas id="crop-canvas"></canvas></div>
+            <div class="crop-frame-wrap">
+              <div class="crop-frame-overlay"></div>
+              <div class="crop-canvas-area" id="crop-area">
+                <canvas id="crop-canvas"></canvas>
+              </div>
+            </div>
+            <div class="crop-hint">Drag to position &middot; Scroll to zoom</div>
             <div class="crop-bar">
               <button class="btn sm secondary" id="btn-zout">-</button>
-              <span>${Math.round(this._cropScale * 100)}%</span>
+              <span style="min-width:40px;text-align:center">${Math.round(this._cropScale * 100)}%</span>
               <button class="btn sm secondary" id="btn-zin">+</button>
               <span style="flex:1"></span>
               <button class="btn sm secondary" id="btn-cancel">Cancel</button>
@@ -1222,16 +1249,16 @@ class SamsungEpaperCard extends HTMLElement {
           fi.dispatchEvent(new Event("change"));
         }
       });
-      const cv = this.shadowRoot.getElementById("crop-canvas");
-      if (cv && this._cropImage) {
-        cv.addEventListener("mousedown", e => this._onCropDown(e));
-        cv.addEventListener("mousemove", e => this._onCropMove(e));
-        cv.addEventListener("mouseup", () => this._onCropUp());
-        cv.addEventListener("mouseleave", () => this._onCropUp());
-        cv.addEventListener("wheel", e => this._onCropWheel(e), { passive: false });
-        cv.addEventListener("touchstart", e => this._onCropDown(e), { passive: false });
-        cv.addEventListener("touchmove", e => this._onCropMove(e), { passive: false });
-        cv.addEventListener("touchend", () => this._onCropUp());
+      const cropArea = this.shadowRoot.getElementById("crop-area");
+      if (cropArea && this._cropImage) {
+        cropArea.addEventListener("mousedown", e => this._onCropDown(e));
+        cropArea.addEventListener("mousemove", e => this._onCropMove(e));
+        cropArea.addEventListener("mouseup", () => this._onCropUp());
+        cropArea.addEventListener("mouseleave", () => this._onCropUp());
+        cropArea.addEventListener("wheel", e => this._onCropWheel(e), { passive: false });
+        cropArea.addEventListener("touchstart", e => this._onCropDown(e), { passive: false });
+        cropArea.addEventListener("touchmove", e => this._onCropMove(e), { passive: false });
+        cropArea.addEventListener("touchend", () => this._onCropUp());
         this.shadowRoot.getElementById("btn-upload")?.addEventListener("click", () => this._uploadCropped());
         this.shadowRoot.getElementById("btn-cancel")?.addEventListener("click", () => {
           this._cropImage = null; this._cropFile = null; this._render();
