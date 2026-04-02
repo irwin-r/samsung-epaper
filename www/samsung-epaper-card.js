@@ -290,25 +290,53 @@ class SamsungEpaperCard extends HTMLElement {
     await this._loadFavourites();
   }
 
-  async _moveFavToCollection(favId) {
-    const options = [{ id: null, name: "All (no folder)" }, ...this._collections];
-    const names = options.map((c, i) => `${i}: ${c.name}`).join("\n");
-    const choice = prompt(`Move to folder:\n${names}\n\nEnter number:`);
-    if (choice === null) return;
-    const idx = parseInt(choice);
-    if (isNaN(idx) || idx < 0 || idx >= options.length) return;
-    const targetId = options[idx].id;
+  _showMovePopover(favId, anchorEl) {
+    // Remove any existing popover
+    this._closeMovePopover();
 
-    // Remove and re-add with new collection_id
     const fav = this._favourites.find(f => f.id === favId);
     if (!fav) return;
-    await fetch(this._url(`/api/favourites/${favId}`), { method: "DELETE" });
-    await fetch(this._url("/api/favourites"), {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ asset_id: fav.asset_id, collection_id: targetId, name: fav.name }),
-    });
-    this._toast("Moved");
-    await this._loadFavourites();
+
+    const rect = anchorEl.getBoundingClientRect();
+    const shadowRect = this.shadowRoot.host.getBoundingClientRect();
+
+    const backdrop = document.createElement("div");
+    backdrop.className = "move-popover-backdrop";
+    backdrop.addEventListener("click", () => this._closeMovePopover());
+
+    const popover = document.createElement("div");
+    popover.className = "move-popover";
+    popover.style.top = `${rect.bottom - shadowRect.top + 4}px`;
+    popover.style.left = `${rect.left - shadowRect.left}px`;
+
+    const options = [{ id: null, name: "All (no folder)" }, ...this._collections];
+    for (const opt of options) {
+      const btn = document.createElement("button");
+      btn.className = `move-popover-item${opt.id === fav.collection_id ? " current" : ""}`;
+      btn.innerHTML = `${opt.id ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>' : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>'} ${opt.name}`;
+      btn.addEventListener("click", async () => {
+        this._closeMovePopover();
+        await fetch(this._url(`/api/favourites/${favId}`), { method: "DELETE" });
+        await fetch(this._url("/api/favourites"), {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ asset_id: fav.asset_id, collection_id: opt.id, name: fav.name }),
+        });
+        this._toast("Moved");
+        await this._loadFavourites();
+      });
+      popover.appendChild(btn);
+    }
+
+    this.shadowRoot.appendChild(backdrop);
+    this.shadowRoot.appendChild(popover);
+    this._movePopoverEls = [backdrop, popover];
+  }
+
+  _closeMovePopover() {
+    if (this._movePopoverEls) {
+      this._movePopoverEls.forEach(el => el.remove());
+      this._movePopoverEls = null;
+    }
   }
 
   async _renameFavourite(favId) {
@@ -732,17 +760,34 @@ class SamsungEpaperCard extends HTMLElement {
         }
         .folder-item.active .folder-count { background:rgba(255,255,255,0.2); opacity:1; }
         .folder-item .folder-actions {
-          position:absolute; right:4px; top:50%; transform:translateY(-50%);
-          display:none; gap:2px;
+          display:none; gap:1px; margin-left:auto; flex-shrink:0;
         }
         .folder-item:hover .folder-actions { display:flex; }
-        .folder-item.active .folder-actions { display:flex; }
+        .folder-item:hover .folder-count { display:none; }
         .folder-action-btn {
-          width:18px; height:18px; border:none; border-radius:4px; cursor:pointer;
+          width:20px; height:20px; border:none; border-radius:4px; cursor:pointer;
           display:flex; align-items:center; justify-content:center;
-          background:rgba(0,0,0,0.1); color:inherit; font-size:10px; padding:0;
+          background:transparent; color:inherit; font-size:10px; padding:0;
+          opacity:0.5; transition:all .15s;
         }
-        .folder-action-btn:hover { background:rgba(0,0,0,0.2); }
+        .folder-action-btn:hover { opacity:1; background:rgba(0,0,0,0.1); }
+        .folder-item.active .folder-action-btn { color:#fff; }
+        .folder-item.active .folder-action-btn:hover { background:rgba(255,255,255,0.2); }
+        /* Move-to popover */
+        .move-popover {
+          position:absolute; z-index:100; background:var(--card-background-color,#fff);
+          border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,.2); padding:4px;
+          min-width:160px; max-height:200px; overflow-y:auto;
+        }
+        .move-popover-item {
+          display:flex; align-items:center; gap:6px; padding:7px 10px;
+          border-radius:6px; cursor:pointer; font-size:12px;
+          border:none; background:transparent; width:100%; text-align:left;
+          font-family:inherit; color:var(--primary-text-color); transition:background .1s;
+        }
+        .move-popover-item:hover { background:var(--secondary-background-color,#f0f0f0); }
+        .move-popover-item.current { opacity:0.4; pointer-events:none; }
+        .move-popover-backdrop { position:fixed; top:0; left:0; right:0; bottom:0; z-index:99; }
         .folder-add {
           display:flex; align-items:center; gap:6px; padding:8px 10px;
           border-radius:8px; cursor:pointer; font-size:11px;
@@ -1242,7 +1287,7 @@ class SamsungEpaperCard extends HTMLElement {
       this.shadowRoot.querySelectorAll("[data-move-fav]").forEach(b =>
         b.addEventListener("click", (e) => {
           e.stopPropagation();
-          this._moveFavToCollection(b.dataset.moveFav);
+          this._showMovePopover(b.dataset.moveFav, b);
         })
       );
       this.shadowRoot.querySelectorAll("[data-del-asset]").forEach(b =>
