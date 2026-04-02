@@ -1056,26 +1056,26 @@ class SamsungEpaperCard extends HTMLElement {
         }
 
         const sidebar = `<div class="folder-sidebar">
-          <button class="folder-item ${this._currentCollectionId === null ? "active" : ""}" data-folder-id="all">
+          <div class="folder-item ${this._currentCollectionId === null ? "active" : ""}" data-folder-id="all">
             <span class="folder-icon">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
             </span>
             <span class="folder-name">All</span>
             <span class="folder-count">${totalFavs}</span>
-          </button>
+          </div>
           <div class="folder-divider"></div>
           ${this._collections.map(c => {
             const count = favCounts[c.id] || 0;
             const isActive = this._currentCollectionId === c.id;
-            return `<button class="folder-item ${isActive ? "active" : ""}" data-folder-id="${c.id}">
+            return `<div class="folder-item ${isActive ? "active" : ""}" data-folder-id="${c.id}">
               <span class="folder-icon">${fSvg}</span>
               <span class="folder-name">${c.name}</span>
               <span class="folder-count">${count}</span>
               <span class="folder-actions">
-                <button class="folder-action-btn" data-rename-col="${c.id}" title="Rename">${pencilSvg}</button>
-                <button class="folder-action-btn" data-del-col="${c.id}" title="Delete">&times;</button>
+                <span class="folder-action-btn" data-rename-col="${c.id}" title="Rename">${pencilSvg}</span>
+                <span class="folder-action-btn" data-del-col="${c.id}" title="Delete">&times;</span>
               </span>
-            </button>`;
+            </div>`;
           }).join("")}
           <button class="folder-add" id="btn-add-folder">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
