@@ -89,6 +89,14 @@ async def generate_art(
     if photo.size and photo.size > MAX_SIZE:
         raise HTTPException(status_code=413, detail="Photo must be under 10MB")
     content = await photo.read()
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Uploaded photo is empty. If it's an iCloud photo, open it in "
+                "Photos to download it to the device first, then retry."
+            ),
+        )
     if len(content) > MAX_SIZE:
         raise HTTPException(status_code=413, detail="Photo must be under 10MB")
 
