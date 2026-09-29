@@ -2,7 +2,7 @@
  * Samsung ePaper Display — Custom Lovelace Card v3
  * Baroque-framed preview with controls below.
  */
-const CARD_VERSION = "4.0.0";
+const CARD_VERSION = "4.2.0";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "Never";
@@ -85,9 +85,16 @@ class SamsungEpaperCard extends HTMLElement {
   set hass(hass) {
     const changed = !this._hass ||
       this._hass.states?.["sensor.samsung_epaper_status"]?.state !== hass.states?.["sensor.samsung_epaper_status"]?.state ||
+      this._hass.states?.["binary_sensor.samsung_epaper_reachable"]?.state !== hass.states?.["binary_sensor.samsung_epaper_reachable"]?.state ||
       this._hass.states?.["camera.samsung_epaper_display_preview"]?.attributes?.access_token !== hass.states?.["camera.samsung_epaper_display_preview"]?.attributes?.access_token;
     this._hass = hass;
-    if (changed) this._render();
+    if (!changed) return;
+    // Only refresh the hass-driven status bits here — never rebuild the tab body.
+    // Rebuilding it on a routine hass update (camera token rotation, status change)
+    // destroys an open native <select> mid-interaction, which is why the dropdowns
+    // "didn't work" on mobile (the picker stays open long enough to get clobbered).
+    if (this.shadowRoot.getElementById("tab-body")) this._updateStatus();
+    else this._renderFull();
   }
 
   static getStubConfig() { return { addon_url: "http://192.168.50.84:8000" }; }
@@ -135,13 +142,30 @@ class SamsungEpaperCard extends HTMLElement {
 
   async _generateArt() {
     if (!this._aiFiles.length) { this._toast("Select photos first"); return; }
-    const count = this._aiFiles.length;
-    this._toast(`Generating ${count} artwork${count > 1 ? "s" : ""}...`);
+
+    // Some photos — typically iCloud images not yet downloaded to the device —
+    // arrive as unreadable 0-byte File objects. Uploading them produces an
+    // empty image that the AI provider rejects, so drop them up front.
+    const valid = this._aiFiles.filter((f) => f.size > 0);
+    const skipped = this._aiFiles.length - valid.length;
+    if (!valid.length) {
+      this._toast("Couldn't read that photo — it's empty. If it's an iCloud photo, open it in Photos to download it first, then retry.");
+      this._aiFiles = [];
+      this._updateDynamic();
+      return;
+    }
+
+    const count = valid.length;
+    this._toast(
+      skipped
+        ? `Skipped ${skipped} unreadable photo${skipped > 1 ? "s" : ""} — generating ${count}...`
+        : `Generating ${count} artwork${count > 1 ? "s" : ""}...`
+    );
     this._generatingJob = true;
     this._updateDynamic();
 
     let lastJobId = null;
-    for (const file of this._aiFiles) {
+    for (const file of valid) {
       const fd = new FormData();
       fd.append("photo", file);
       fd.append("art_type", this._selectedArtType);
@@ -530,7 +554,9 @@ class SamsungEpaperCard extends HTMLElement {
     this._renderFull();
   }
 
-  _updateDynamic() {
+  // Hass-driven bits only (status bar, online pill, preview image). Safe to call on
+  // every hass update because it never touches the tab body or any open form control.
+  _updateStatus() {
     const status = this._hass?.states?.["sensor.samsung_epaper_status"];
     const preset = this._hass?.states?.["select.samsung_epaper_active_preset"];
     const reachable = this._hass?.states?.["binary_sensor.samsung_epaper_reachable"];
@@ -562,6 +588,22 @@ class SamsungEpaperCard extends HTMLElement {
       `;
     }
 
+    // Update preview image
+    const previewImg = this.shadowRoot.getElementById("preview-img");
+    const placeholder = this.shadowRoot.getElementById("preview-placeholder");
+    const previewUrl = this._getPreviewUrl();
+    if (previewImg && previewUrl) {
+      if (previewImg.getAttribute("src") !== previewUrl) previewImg.src = previewUrl;
+      previewImg.style.display = "";
+      if (placeholder) placeholder.style.display = "none";
+    }
+  }
+
+  // Full refresh: status bits + tab highlights + tab-body rebuild. Call this only in
+  // response to navigation or freshly loaded data, never on a routine hass update.
+  _updateDynamic() {
+    this._updateStatus();
+
     // Update tab highlights
     this.shadowRoot.querySelectorAll(".tab").forEach(t => {
       t.classList.toggle("active", t.dataset.tab === this._activeTab);
@@ -572,16 +614,6 @@ class SamsungEpaperCard extends HTMLElement {
     if (tabBody) {
       tabBody.innerHTML = this._renderTab();
       this._bindTabContent();
-    }
-
-    // Update preview image
-    const previewImg = this.shadowRoot.getElementById("preview-img");
-    const placeholder = this.shadowRoot.getElementById("preview-placeholder");
-    const previewUrl = this._getPreviewUrl();
-    if (previewImg && previewUrl) {
-      if (previewImg.getAttribute("src") !== previewUrl) previewImg.src = previewUrl;
-      previewImg.style.display = "";
-      if (placeholder) placeholder.style.display = "none";
     }
   }
 
@@ -597,6 +629,7 @@ class SamsungEpaperCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>
         :host { display:block; font-family:var(--primary-font-family,sans-serif); }
+        :host *, :host *::before, :host *::after { box-sizing:border-box; }
 
         /* --- Layout --- */
         .outer {
@@ -729,6 +762,7 @@ class SamsungEpaperCard extends HTMLElement {
           position:absolute;
           top:10%; bottom:10%; left:16.5%; right:16%;
           overflow:hidden; background:#111; z-index:1; cursor:grab;
+          touch-action:none;
         }
         .crop-canvas-area:active { cursor:grabbing; }
         #crop-canvas { display:block; }
@@ -895,6 +929,61 @@ class SamsungEpaperCard extends HTMLElement {
           border-radius:8px; font-size:13px; transition:transform .3s; z-index:9999; pointer-events:none;
         }
         #toast.show { transform:translateX(-50%) translateY(0); }
+
+        /* ============ Mobile / narrow-viewport responsiveness ============ */
+        @media (max-width: 600px) {
+          .outer { padding:12px; min-height:auto; align-items:flex-start; }
+          .layout { flex-direction:column; gap:14px; align-items:stretch; max-width:100%; }
+          .left-col { align-self:center; }
+          .frame-wrap { width:min(220px, 62vw); }
+          .right-col .card { margin-top:0; }
+
+          /* Bigger tap targets; inputs at >=16px stop iOS from zooming on focus */
+          .mode-select, .url-row input { font-size:16px; padding:12px; }
+          .btn { font-size:14px; padding:11px 16px; }
+          .btn.sm { font-size:13px; padding:8px 12px; }
+          .tabs { gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+          .tab { flex:1 0 auto; white-space:nowrap; font-size:13px; padding:9px 12px; }
+          .sub-tab { padding:12px 6px; font-size:13px; }
+          .sub-tab .sub-icon { font-size:18px; }
+          .status-bar { flex-wrap:wrap; }
+          .upload-area { padding:22px 16px; }
+
+          /* Favourites: folder list becomes a horizontal chip strip above the gallery */
+          .fav-layout { flex-direction:column; gap:10px; min-height:0; }
+          .folder-sidebar {
+            width:auto; flex-direction:row; overflow-x:auto; overflow-y:hidden;
+            gap:6px; padding-bottom:4px; -webkit-overflow-scrolling:touch;
+          }
+          .folder-divider { display:none; }
+          .folder-item { flex-shrink:0; padding:9px 12px; }
+          .folder-add { flex-shrink:0; margin-top:0; white-space:nowrap; }
+          .fav-gallery-area { overflow-y:visible; }
+
+          .gallery { grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:8px; }
+
+          .crop-frame-wrap { width:min(240px, 72vw); }
+          .crop-bar { font-size:13px; }
+
+          /* Move-to-folder menu becomes a bottom sheet so it can't render off-screen */
+          .move-popover {
+            position:fixed !important;
+            left:50% !important; right:auto !important;
+            top:auto !important; bottom:16px !important;
+            transform:translateX(-50%);
+            width:min(340px, 92vw); min-width:0; max-height:55vh;
+          }
+          .move-popover-item { padding:13px 14px; font-size:14px; }
+          .move-popover-backdrop { background:rgba(0,0,0,0.35); }
+        }
+
+        /* Touch devices can't hover — always expose the per-item action buttons */
+        @media (hover: none) {
+          .gallery-item .item-actions { opacity:1; }
+          .folder-item .folder-actions { display:flex; }
+          .overlay-btn { width:26px; height:26px; font-size:14px; }
+          .folder-action-btn { width:24px; height:24px; }
+        }
       </style>
 
       <div class="outer">
@@ -1199,7 +1288,6 @@ class SamsungEpaperCard extends HTMLElement {
     if (this._activeTab === "create" && this._createMode === "ai") {
       this.shadowRoot.getElementById("ai-type-select")?.addEventListener("change", (e) => {
         this._selectedArtType = e.target.value;
-        this._updateDynamic();
       });
       const aiArea = this.shadowRoot.getElementById("ai-drop-area");
       const aiFi = this.shadowRoot.getElementById("ai-file-input");
