@@ -46,6 +46,7 @@ class OpenAITextGenerator:
                 "or pass it directly to the constructor."
             )
         
+        self.model = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini")
         self.client = openai.OpenAI(api_key=self.api_key, max_retries=3)
     
     def generate_arrest_story(self, word_count_target: int = 200, gender_info: Optional[dict] = None) -> NewsStory:
@@ -68,7 +69,7 @@ class OpenAITextGenerator:
             prompt = self._create_story_prompt(word_count_target, gender_info)
             
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model=self.model,
                 messages=[
                     {
                         "role": "system",
@@ -79,8 +80,8 @@ class OpenAITextGenerator:
                         "content": prompt
                     }
                 ],
-                temperature=0.9,
-                max_tokens=800
+                reasoning_effort="low",
+                max_completion_tokens=4000,
             )
             
             content = response.choices[0].message.content.strip()
