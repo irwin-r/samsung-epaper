@@ -2,13 +2,14 @@
 
 import asyncio
 import logging
-from datetime import datetime
+import re
+from datetime import date, datetime
 from pathlib import Path
 
 import aiohttp
 from bs4 import BeautifulSoup
 
-from .base import ContentSource
+from .base import ContentSource, StaleContentError, local_today
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,17 @@ class FrontpagesSource(ContentSource):
 
         if not image_url:
             raise Exception("Could not find newspaper front page image URL on page")
+
+        # Image paths carry the edition date: /t/2026/09/29/<slug>-<id>.webp
+        if config.get("require_today"):
+            m = re.search(r"/(\d{4})/(\d{2})/(\d{2})/", image_url)
+            if not m:
+                raise StaleContentError(f"No edition date in image URL {image_url}")
+            edition_day = date(*map(int, m.groups()))
+            if edition_day != local_today():
+                raise StaleContentError(
+                    f"frontpages.com has the {edition_day} edition, today is {local_today()}"
+                )
 
         logger.info(f"Downloading front page image: {image_url}")
 

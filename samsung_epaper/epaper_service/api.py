@@ -45,7 +45,8 @@ from .asset_pipeline import ingest_asset, push_asset_to_display, set_display_loc
 from .generation_api import router as generation_router, set_generation_deps
 from .generation_worker import make_worker
 from .services.jobs import JobQueue
-from .sources import get_source
+from .sources import StaleContentError, get_source
+from .sources.base import local_tz
 
 logger = logging.getLogger(__name__)
 
@@ -136,12 +137,10 @@ async def lifespan(app: FastAPI):
     schedules = await schedule_repo.list()
     for sched in schedules:
         if sched.is_enabled and croniter.is_valid(sched.cron_expression):
-            cron = croniter(sched.cron_expression, datetime.now())
-            next_run = cron.get_next(datetime)
             await schedule_repo.update_last_run(
                 sched.id,
                 last_run_at=sched.last_run_at.isoformat() if sched.last_run_at else None,
-                next_run_at=next_run.isoformat(),
+                next_run_at=next_cron_run(sched.cron_expression).isoformat(),
             )
 
     # Start background scheduler and job queue
@@ -162,6 +161,16 @@ async def lifespan(app: FastAPI):
         pass
     await db.close()
     logger.info("Service shut down")
+
+
+def next_cron_run(expression: str) -> datetime:
+    """Next fire time of a cron expression read in LOCAL_TIMEZONE.
+
+    Returned as naive host-local time to match datetime.now() elsewhere.
+    The LXC runs on UTC, so a bare croniter would fire "0 7" at 5pm Sydney.
+    """
+    now_local = datetime.now(local_tz())
+    return croniter(expression, now_local).get_next(datetime).astimezone().replace(tzinfo=None)
 
 
 async def _run_scheduler(app: FastAPI) -> None:
@@ -186,18 +195,21 @@ async def _run_scheduler(app: FastAPI) -> None:
                             f"(preset_id={sched.preset_id})"
                         )
                         try:
-                            await perform_update(app, preset_id=sched.preset_id)
+                            # Schedules poll repeatedly, so only push an
+                            # edition the first time it is seen.
+                            await perform_update(
+                                app, preset_id=sched.preset_id, only_new=True
+                            )
+                        except StaleContentError as e:
+                            logger.info(f"Schedule '{sched.name}': {e}")
                         except Exception:
                             logger.exception(
                                 f"Schedule '{sched.name}' update failed"
                             )
-                        # Compute next run
-                        cron = croniter(sched.cron_expression, now)
-                        next_run = cron.get_next(datetime)
                         await schedule_repo.update_last_run(
                             sched.id,
                             last_run_at=now.isoformat(),
-                            next_run_at=next_run.isoformat(),
+                            next_run_at=next_cron_run(sched.cron_expression).isoformat(),
                         )
             except Exception:
                 logger.exception("Scheduler tick failed")
@@ -688,8 +700,7 @@ def create_app() -> FastAPI:
             cron_expression=request.cron_expression,
         )
         # Compute initial next_run_at
-        cron = croniter(request.cron_expression, datetime.now())
-        next_run = cron.get_next(datetime)
+        next_run = next_cron_run(request.cron_expression)
         await app.state.schedule_repo.update_last_run(
             schedule_id, last_run_at=None, next_run_at=next_run.isoformat()
         )
@@ -725,8 +736,7 @@ def create_app() -> FastAPI:
         # Recompute next_run_at if cron changed or schedule re-enabled
         effective_cron = request.cron_expression or schedule.cron_expression
         if request.cron_expression is not None or request.is_enabled is True:
-            cron = croniter(effective_cron, datetime.now())
-            next_run = cron.get_next(datetime)
+            next_run = next_cron_run(effective_cron)
             await app.state.schedule_repo.update_last_run(
                 schedule_id,
                 last_run_at=schedule.last_run_at.isoformat() if schedule.last_run_at else None,
@@ -761,10 +771,37 @@ def create_app() -> FastAPI:
     return app
 
 
+async def _fetch_with_fallback(
+    source_type: str, source_config: dict, cache_dir: Path
+) -> tuple[str, Path, dict]:
+    """Fetch from the preset's source, then its ``fallback`` chain.
+
+    A fallback is ``{"source_type": ..., "source_config": {...}}`` nested in
+    the source config, and may carry its own fallback.
+    """
+    try:
+        raw_path, metadata = await get_source(source_type).fetch(source_config, cache_dir)
+        return source_type, raw_path, metadata
+    except Exception as e:
+        fallback = source_config.get("fallback")
+        if not fallback:
+            raise
+        logger.warning(
+            f"{source_type} failed ({e}); trying fallback {fallback['source_type']}"
+        )
+        return await _fetch_with_fallback(
+            fallback["source_type"], fallback["source_config"], cache_dir
+        )
+
+
 async def perform_update(
-    app: FastAPI, preset_id: Optional[str] = None
+    app: FastAPI, preset_id: Optional[str] = None, only_new: bool = False
 ) -> str:
-    """Core update flow: fetch from content source -> ingest -> push."""
+    """Core update flow: fetch from content source -> ingest -> push.
+
+    With ``only_new``, an image that was ingested before is not pushed again,
+    so polling schedules don't overwrite whatever the display moved on to.
+    """
     async with app.state.update_lock:
         preset_repo: PresetRepository = app.state.preset_repo
         assets_dir: Path = app.state.assets_dir
@@ -786,10 +823,19 @@ async def perform_update(
             logger.info(f"Using preset: {preset.name} ({preset.source_type})")
 
             # 2. Fetch from source
-            source = get_source(preset.source_type)
             cache_dir = assets_dir / "cache"
             cache_dir.mkdir(exist_ok=True)
-            raw_path, metadata = await source.fetch(preset.source_config, cache_dir)
+            source_type, raw_path, metadata = await _fetch_with_fallback(
+                preset.source_type, preset.source_config, cache_dir
+            )
+
+            if only_new:
+                image_hash = await app.state.processor.compute_hash(raw_path)
+                existing = await app.state.asset_repo.get_by_hash(image_hash)
+                if existing:
+                    raw_path.unlink(missing_ok=True)
+                    logger.info(f"Already shown {existing.title!r}; not pushing again")
+                    return existing.id
 
             # 3. Determine processing mode
             process_mode = "color"
@@ -800,7 +846,7 @@ async def perform_update(
             result = await ingest_asset(
                 app,
                 raw_path,
-                source_type=preset.source_type,
+                source_type=source_type,
                 title=metadata.get("title"),
                 source_id=metadata.get("source_id"),
                 metadata_json=metadata.get("metadata_json"),
@@ -818,11 +864,17 @@ async def perform_update(
 
             return result.asset_id
 
+        except StaleContentError as e:
+            # Normal while polling before the edition is out; not a failure
+            logger.info(f"No new edition yet: {e}")
+            raise
         except Exception as e:
             app.state.last_update_status = "failed"
+            app.state.last_update = datetime.now()
             logger.error(f"Update failed: {e}", exc_info=True)
             raise
         finally:
+            # ingest_asset stamps last_update when it pushes; polls that
+            # find nothing new leave it alone.
             app.state.is_updating = False
-            app.state.last_update = datetime.now()
             logger.info("=" * 60)

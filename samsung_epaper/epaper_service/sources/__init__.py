@@ -1,10 +1,12 @@
 """Content source registry."""
 
-from .base import ContentSource
+from .base import ContentSource, StaleContentError
 from .frontpages import FrontpagesSource
+from .pagesuite import PageSuiteSource
 
 SOURCE_REGISTRY: dict[str, type[ContentSource]] = {
     "frontpages": FrontpagesSource,
+    "pagesuite": PageSuiteSource,
 }
 
 
