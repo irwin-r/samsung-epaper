@@ -1,4 +1,4 @@
-"""xAI Grok image generation provider."""
+"""xAI Grok Imagine image generation provider."""
 import base64
 import logging
 import os
@@ -9,17 +9,27 @@ from ..base import ImageGenerationError, ImageProvider
 
 logger = logging.getLogger(__name__)
 
+_EDITS_URL = "https://api.x.ai/v1/images/edits"
+_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9"]
+
+
+def _aspect_ratio_for(output_size: str) -> str:
+    """Pick the supported aspect ratio closest to a WxH size string."""
+    width, height = (int(n) for n in output_size.lower().split("x"))
+    target = width / height
+    return min(_ASPECT_RATIOS, key=lambda r: abs(int(r.split(":")[0]) / int(r.split(":")[1]) - target))
+
 
 class GrokProvider(ImageProvider):
-    """Generates images using xAI's Grok API (OpenAI-compatible SDK)."""
+    """Edits the input photo with xAI's /v1/images/edits endpoint."""
 
     provider_name = "grok"
 
     def __init__(self, api_key: str | None = None, model: str | None = None):
         try:
-            import openai
+            import httpx
         except ImportError as e:
-            raise ImportError("openai package required: pip install openai") from e
+            raise ImportError("httpx package required: pip install httpx") from e
 
         self.api_key = api_key or os.getenv("XAI_API_KEY")
         if not self.api_key:
@@ -27,11 +37,12 @@ class GrokProvider(ImageProvider):
                 "xAI API key not found. Set XAI_API_KEY environment variable."
             )
 
-        self.model = model or os.getenv("GROK_IMAGE_MODEL", "grok-imagine-image")
-        self.client = openai.OpenAI(
-            api_key=self.api_key,
-            base_url="https://api.x.ai/v1",
-            max_retries=3,
+        self.model = model or os.getenv("GROK_IMAGE_MODEL", "grok-imagine-image-2.0")
+        self.quality = os.getenv("GROK_IMAGE_QUALITY", "medium")
+        self.client = httpx.Client(
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            timeout=300,
+            transport=httpx.HTTPTransport(retries=3),
         )
 
     def generate(
@@ -42,41 +53,33 @@ class GrokProvider(ImageProvider):
         output_size: str = "1024x1536",
         **provider_options: Any,
     ) -> str:
-        logger.info(f"[Grok] Generating image from {input_image_path}")
+        logger.info(f"[Grok] Generating image from {input_image_path} with {self.model}")
 
         try:
             image_b64, mime_type = self._encode_image(input_image_path)
             prompt = self.adapt_prompt(prompt)
 
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{image_b64}"},
-                        },
-                    ],
-                }],
-            )
+            response = self.client.post(_EDITS_URL, json={
+                "model": self.model,
+                "prompt": prompt,
+                "image": {"url": f"data:{mime_type};base64,{image_b64}", "type": "image_url"},
+                "aspect_ratio": _aspect_ratio_for(output_size),
+                "resolution": "2k",
+                "quality": self.quality,
+                "response_format": "b64_json",
+            })
+            if response.status_code != 200:
+                raise ImageGenerationError(
+                    f"Grok failed: HTTP {response.status_code}: {response.text[:500]}"
+                )
 
-            # Extract image from response
-            for choice in response.choices:
-                message = choice.message
-                if hasattr(message, "content") and message.content:
-                    # Grok returns base64 image in content
-                    for block in (message.content if isinstance(message.content, list) else [message.content]):
-                        if isinstance(block, str):
-                            continue
-                        if hasattr(block, "type") and block.type == "image_url":
-                            image_data = block.image_url.url.split(",", 1)[1]
-                            Path(output_path).write_bytes(base64.b64decode(image_data))
-                            logger.info(f"[Grok] Successfully generated: {output_path}")
-                            return output_path
+            data = response.json().get("data") or []
+            if not data or not data[0].get("b64_json"):
+                raise ImageGenerationError("No image data in Grok response")
 
-            raise ImageGenerationError("No image found in Grok response")
+            Path(output_path).write_bytes(base64.b64decode(data[0]["b64_json"]))
+            logger.info(f"[Grok] Successfully generated: {output_path}")
+            return output_path
 
         except ImageGenerationError:
             raise

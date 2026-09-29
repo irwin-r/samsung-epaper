@@ -9,6 +9,15 @@ from ..base import ImageGenerationError, ImageProvider
 
 logger = logging.getLogger(__name__)
 
+_ASPECT_RATIOS = ["1:1", "2:3", "3:2", "3:4", "4:3", "4:5", "5:4", "9:16", "16:9", "21:9"]
+
+
+def _aspect_ratio_for(output_size: str) -> str:
+    """Pick the supported Gemini aspect ratio closest to a WxH size string."""
+    width, height = (int(n) for n in output_size.lower().split("x"))
+    target = width / height
+    return min(_ASPECT_RATIOS, key=lambda r: abs(int(r.split(":")[0]) / int(r.split(":")[1]) - target))
+
 
 class GeminiProvider(ImageProvider):
     """Generates images using Google's Gemini API."""
@@ -22,7 +31,7 @@ class GeminiProvider(ImageProvider):
                 "Gemini API key not found. Set GEMINI_API_KEY environment variable."
             )
 
-        self.model = model or os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
+        self.model = model or os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-image")
         self._client = None
 
     @property
@@ -71,6 +80,10 @@ class GeminiProvider(ImageProvider):
                 ],
                 config=types.GenerateContentConfig(
                     response_modalities=["IMAGE", "TEXT"],
+                    image_config=types.ImageConfig(
+                        aspect_ratio=_aspect_ratio_for(output_size),
+                        image_size="2K",
+                    ),
                 ),
             )
 
